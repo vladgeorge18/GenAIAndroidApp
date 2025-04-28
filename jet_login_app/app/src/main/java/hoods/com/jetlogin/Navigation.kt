@@ -1,6 +1,11 @@
 package hoods.com.jetlogin
 
+import android.net.Uri
+import android.util.Log
+import androidx.activity.ComponentActivity
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
@@ -14,6 +19,8 @@ import hoods.com.jetlogin.ui.login.LoginScreen
 import hoods.com.jetlogin.ui.signup.PolicyScreen
 import hoods.com.jetlogin.ui.signup.PrivacyScreen
 import hoods.com.jetlogin.ui.signup.SignUpScreen
+import hoods.com.jetlogin.ui.EditImageScreen
+import hoods.com.jetlogin.ui.GenerateImageScreen
 
 sealed class Route {
     data class LoginScreen(val name: String = "Login") : Route()
@@ -24,11 +31,14 @@ sealed class Route {
     data class HomeScreen(val name: String = "Home/{username}") : Route() {
         fun createRoute(username: String): String = "Home/$username"
         }
+    data class EditImageScreen(val name: String = "EditImage") : Route()
+    data class GenerateImageScreen(val name: String = "GenerateImage") : Route()
 }
 
 
 @Composable
 fun MyNavigation(navHostController: NavHostController) {
+
     NavHost(
         navController = navHostController,
         startDestination = "login_flow",
@@ -52,18 +62,33 @@ fun MyNavigation(navHostController: NavHostController) {
             }
 
             composable(route = Route.SignUpScreen().name) {
+
                 SignUpScreen(
                     onSignUpClick = { userName ->
+                        Log.d("DBG", "➡️ onSignUpClick – navigating to Home, arg=$userName")
+
+                        Log.d("DBG", "🧭 navigate to => ${Route.HomeScreen().createRoute(userName)}")
                         navHostController.navigate(
+
                             Route.HomeScreen().createRoute(userName)
-                        ){
-                            popUpTo("login_flow")
+                        ) {
+
+                            popUpTo(route = "login_flow")
                         }
                     },
+//                    onLoginClick = {
+//                        navHostController.navigateToSingleTop(
+//                            Route.LoginScreen().name
+//                        )
+//                    },
                     onLoginClick = {
-                        navHostController.navigateToSingleTop(
-                            Route.LoginScreen().name
-                        )
+                        // Called after success or if user taps "Already have account? Sign In"
+                        navHostController.navigate(Route.LoginScreen().name) {
+                            // This ensures going back doesn't show SignUp again
+                            popUpTo(Route.SignUpScreen().name) {
+                                inclusive = true
+                            }
+                        }
                     },
                     onPrivacyClick = {
                         navHostController.navigate(
@@ -112,7 +137,26 @@ fun MyNavigation(navHostController: NavHostController) {
                     }
                 },
                 welcomeMessage = "Welcome to the Home Screen",
-                userName = userName
+                userName = userName,
+                onEditImageClick = {
+                    // Navigate to the Edit Image Screen
+                    navHostController.navigate(Route.EditImageScreen().name)
+                }
+                //onFeatureClick = {}
+            )
+        }
+        composable(route = Route.GenerateImageScreen().name) {
+            GenerateImageScreen(
+                onClose = { navHostController.navigateUp() },
+                onImageGenerated = { image ->
+                    // ImageHolder is updated in the GenerateImageScreen already.
+                    navHostController.navigate(Route.EditImageScreen().name)
+                }
+            )
+        }
+        composable(route = Route.EditImageScreen().name) {
+            EditImageScreen(
+                onBackClick = { navHostController.navigateUp() }
             )
         }
     }

@@ -1,6 +1,11 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    // Add the Google services Gradle plugin
+    id("com.google.gms.google-services")
+
+    id("org.jetbrains.kotlin.plugin.compose")
+
 }
 
 android {
@@ -35,13 +40,14 @@ android {
     }
     kotlinOptions {
         jvmTarget = "1.8"
+        freeCompilerArgs += listOf("-XXLanguage:+BreakContinueInInlineLambdas")
     }
     buildFeatures {
         compose = true
     }
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.1"
-    }
+   // composeOptions {
+   //     kotlinCompilerExtensionVersion = "1.5.1"
+    //}
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -72,4 +78,18 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation("com.squareup.okhttp3:okhttp:4.11.0")
     implementation("com.android.volley:volley:1.2.1")
+    implementation("androidx.compose.material3:material3:1.2.0")
+    implementation("androidx.compose.material:material-icons-extended:1.6.0")
+    implementation("androidx.compose.material:material:1.7.8")
+    implementation("io.coil-kt:coil-compose:2.2.2")
+    implementation(platform("com.google.firebase:firebase-bom:33.12.0"))
+    // Firebase Auth
+    // Add the dependency for the Firebase Authentication library
+    // When using the BoM, you don't specify versions in Firebase library dependencies
+    implementation("com.google.firebase:firebase-auth")
+    // Firestore
+    implementation("com.google.firebase:firebase-firestore")
+
+    implementation ("com.airbnb.android:lottie-compose:6.0.0")
+
 }

@@ -5,6 +5,7 @@ import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -25,13 +26,18 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -47,46 +53,59 @@ import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.OkHttpClient
 import com.android.volley.Request
+import com.google.firebase.auth.FirebaseAuth
+import hoods.com.jetlogin.ui.signup.LoadingOverlay
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import okhttp3.Response
 import java.io.IOException
 
 val defaultPadding = 16.dp
 val itemSpacing = 8.dp
-//val greetingApiUrl = "https://europe-central2-dummyproject-447312.cloudfunctions.net/greet_user"
 
 @Composable
-fun LoginScreen(onLoginClick: (String) -> Unit, onSignUpClick: () -> Unit) {
-    val (userName, setUsername) = rememberSaveable {
-        mutableStateOf("")
-    }
-    val (password, setPassword) = rememberSaveable {
-        mutableStateOf("")
-    }
-    val (checked, onCheckedChange) = rememberSaveable {
-        mutableStateOf(false)
-    }
-    val isFieldsEmpty = userName.isNotEmpty() && password.isNotEmpty()
+fun LoginScreen(
+    onLoginClick: (String) -> Unit,
+    onSignUpClick: () -> Unit
+) {
+    val (userName, setUsername) = rememberSaveable { mutableStateOf("") }
+    val (password, setPassword) = rememberSaveable { mutableStateOf("") }
+    val (checked, onCheckedChange) = rememberSaveable { mutableStateOf(false) }
+
+    // Only enable the login button if these fields are not empty
+    val isFieldsNotEmpty = userName.isNotEmpty() && password.isNotEmpty()
 
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
+    var isLoading by rememberSaveable { mutableStateOf(false) }
+    Box(modifier = Modifier.fillMaxSize()) {
     Column(
-        modifier = Modifier.fillMaxSize()
+        modifier = Modifier
+            .fillMaxSize()
             .padding(defaultPadding),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         HeaderText(
             text = "Login",
-            modifier = Modifier.padding(vertical = defaultPadding)
+            modifier = Modifier
+                .padding(vertical = defaultPadding)
                 .align(alignment = Alignment.Start)
         )
+
+        // Username / Email field
         LoginTextField(
             value = userName,
             onValueChange = setUsername,
-            labelText = "Username",
+            labelText = "Email",
             leadingIcon = Icons.Default.Person,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            keyboardType = KeyboardType.Email
         )
         Spacer(Modifier.height(itemSpacing))
+
+        // Password field
         LoginTextField(
             value = password,
             onValueChange = setPassword,
@@ -97,6 +116,7 @@ fun LoginScreen(onLoginClick: (String) -> Unit, onSignUpClick: () -> Unit) {
             visualTransformation = PasswordVisualTransformation()
         )
         Spacer(Modifier.height(itemSpacing))
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
@@ -113,39 +133,66 @@ fun LoginScreen(onLoginClick: (String) -> Unit, onSignUpClick: () -> Unit) {
             }
         }
         Spacer(Modifier.height(itemSpacing))
+
+        // Login Button
         Button(
-            //onClick = onLoginClick,
-            onClick = { onLoginClick(userName) },
-            modifier = Modifier.fillMaxWidth(),
-            enabled = isFieldsEmpty
+            onClick = {
+                if (isLoading) return@Button
+                isLoading = true
+                scope.launch {
+                    // Attempt Firebase Auth sign-in
+                    Log.d(
+                        "LoginScreen",
+                        "Login button clicked. Email=$userName, Password=$password"
+                    )
+                    signInUser(
+                        email = userName,
+                        password = password,
+                        onSuccess = {
+                            // Only navigate if sign-in is successful
+                            Log.d("LoginScreen", "signInUser onSuccess -> navigating to Home")
+                            scope.launch {
+                                delay(1000)
+                                onLoginClick(userName)
+                                isLoading = false           // or pass `email` if you want
+                            }
+                        },
+                        onFailure = { errorMsg ->
+                            isLoading = false
+                            // If sign-in fails, show a toast
+                            Log.e("LoginScreen", "signInUser onFailure: $errorMsg")
+                            Toast.makeText(context, "Login failed: $errorMsg", Toast.LENGTH_LONG)
+                                .show()
+                        }
+                    )
+                }
+            },
+            enabled = isFieldsNotEmpty && !isLoading,
+            modifier = Modifier.fillMaxWidth()
         ) {
             Text("Login")
         }
+
+        // Alternative Logins & Sign Up
         AlternativeLoginOptions(
             onIconClick = { index ->
                 when (index) {
-                    0 -> {
-                        Toast.makeText(context, "Instagram Login Click", Toast.LENGTH_SHORT).show()
-                    }
-
-                    1 -> {
-                        Toast.makeText(context, "Github Login Click", Toast.LENGTH_SHORT).show()
-
-                    }
-
-                    2 -> {
-                        Toast.makeText(context, "Google Login Click", Toast.LENGTH_SHORT).show()
-                    }
+                    0 -> Toast.makeText(context, "Instagram Login Click", Toast.LENGTH_SHORT).show()
+                    1 -> Toast.makeText(context, "Github Login Click", Toast.LENGTH_SHORT).show()
+                    2 -> Toast.makeText(context, "Google Login Click", Toast.LENGTH_SHORT).show()
                 }
             },
             onSignUpClick = onSignUpClick,
-            modifier = Modifier.fillMaxSize()
-                .wrapContentSize(align = Alignment.BottomCenter)
+            modifier = Modifier
+                .fillMaxSize()
+                .wrapContentSize(Alignment.BottomCenter)
         )
-
+    }
+    if (isLoading) {
+        LoadingOverlay()
     }
 }
-
+}
 
 @Composable
 fun AlternativeLoginOptions(
@@ -171,9 +218,8 @@ fun AlternativeLoginOptions(
                     contentDescription = "alternative Login",
                     modifier = Modifier
                         .size(32.dp)
-                        .clickable {
-                            onIconClick(index)
-                        }.clip(CircleShape)
+                        .clip(CircleShape)
+                        .clickable { onIconClick(index) }
                 )
                 Spacer(Modifier.width(defaultPadding))
             }
@@ -190,18 +236,39 @@ fun AlternativeLoginOptions(
             }
         }
     }
-
 }
 
+// Actual sign-in function that uses Firebase
+suspend fun signInUser(
+    email: String,
+    password: String,
+    onSuccess: () -> Unit,
+    onFailure: (String) -> Unit
+) {
+    val auth = FirebaseAuth.getInstance()
+    try {
+        Log.d("signInUser", "Attempting sign-in with email=$email")
+        val result = auth.signInWithEmailAndPassword(email, password).await()
+        val user = result.user
+        if (user != null) {
+            Log.d("signInUser", "Sign-in success: uid=${user.uid}, email=${user.email}")
+            onSuccess()
+        } else {
+            Log.e("signInUser", "Sign-in failed: user is null!")
+            onFailure("Authentication returned null user.")
+        }
+    } catch (e: Exception) {
+        Log.e("signInUser", "signInWithEmailAndPassword exception: ${e.localizedMessage}", e)
+        onFailure(e.localizedMessage ?: "Unknown error")
+    }
+}
 
 @Preview(showSystemUi = true)
 @Composable
 fun PrevLoginScreen() {
-    JetLoginTheme {
-        LoginScreen({}, {})
-    }
+    // Provide stub lambdas for preview
+    LoginScreen(
+        onLoginClick = { /* No-op */ },
+        onSignUpClick = { /* No-op */ }
+    )
 }
-
-
-
-
