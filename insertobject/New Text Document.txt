@@ -1,0 +1,102 @@
+import requests
+from flask import jsonify, request, send_file
+import base64
+import os
+from io import BytesIO
+
+def insert_object(request):
+    """
+    Expects a multipart/form-data request with:
+      - original (file): the original image file.
+      - mask (file): the mask image file.
+      - prompt (string): the text prompt.
+      
+    Returns:
+      - On success: the image as a binary PNG with MIME type "image/png".
+    """
+    # Extract the form fields from the request
+    prompt = request.form.get("prompt")
+    original_file = request.files.get("original")
+    mask_file = request.files.get("mask")
+    
+    # Verify that all required fields are provided
+    if not prompt or not original_file or not mask_file:
+        return jsonify({
+            "error": "Missing required fields: prompt, original, and mask must be provided."
+        }), 400
+    
+    # Read the file data from the provided files
+    original_bytes = original_file.read()
+    mask_bytes = mask_file.read()
+    
+    # Encode the images to base64 strings if needed for an API call
+    original_b64 = base64.b64encode(original_bytes).decode('utf-8')
+    mask_b64 = base64.b64encode(mask_bytes).decode('utf-8')
+    
+    # The following section sets up and calls the Segmind inpainting API.
+    # It is commented out because we want to return the mask image for testing.
+    
+    # Set up the API key and endpoint for the Segmind inpainting API
+    api_key = "SG_f28ec95702fff5d7"
+    headers = {'x-api-key': api_key}
+    url = "https://api.segmind.com/v1/focus-inpaint"
+    
+    try:
+        # Construct the payload for the API call
+        data = {
+            "prompt": prompt,
+            "negative_prompt": "lowquality, badquality, sketches",
+            "steps": 30,
+            "samples": 1,
+            "styles": [
+                "Fooocus V2",
+                "Fooocus Sharp",
+                "Fooocus Enhance"
+            ],
+            "aspect_ratios": "1024*1024",
+            "seed": 354849415,
+            "guidance_scale": 4,
+            "scheduler": "karras",
+            "base_model": "juggernaut_v8",
+            "sampler": "dpmpp_2m_sde_gpu",
+            "input_image": original_b64,  
+            "input_mask": mask_b64,         
+            "inpaint_erode_or_dilate": 1,
+            "inpaint_respective_field": 0.618,
+            "inpaint_strength": 1,
+            "invert_mask_checkbox": "False",
+            "mixing_image_prompt_and_inpaint": "True",
+            "faceswap_cn_stop": 0.9,
+            "faceswap_cn_weight": 0.8,
+            "imageprompt_cn_stop": 0.5,
+            "imageprompt_cn_weight": 0.6,
+            "pyracanny_cn_stop": 0.5,
+            "pyracanny_cn_weight": 1,
+            "cpds_cn_stop": 0.5,
+            "cpds_cn_weight": 1,
+            "base64": False
+        }
+        
+        # Send the request to the Segmind API
+        segmind_response = requests.post(url, json=data, headers=headers)
+        print("Segmind status:", segmind_response.status_code)
+        print("Segmind response:", segmind_response.text)
+        # If the API call is successful, send back the generated image
+        if segmind_response.status_code == 200:
+            return send_file(BytesIO(segmind_response.content), mimetype="image/png")
+        else:
+            # Return an error response if the API call fails
+            return jsonify({
+                "error": "Segmind API error",
+                "status_code": segmind_response.status_code,
+                "response": segmind_response.text
+            }), 500
+        
+    except Exception as e:
+        # Catch any exception and return an error response
+        return jsonify({"error": f"Exception: {str(e)}"}), 500
+    
+    
+    # For testing purposes, return the mask image directly.
+    # This allows you to verify that the frontend receives a good image.
+    #return send_file(BytesIO(mask_bytes), mimetype="image/png")

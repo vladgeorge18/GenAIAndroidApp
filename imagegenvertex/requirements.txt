@@ -1,0 +1,4 @@
+flask
+requests
+vertexai
+Pillow

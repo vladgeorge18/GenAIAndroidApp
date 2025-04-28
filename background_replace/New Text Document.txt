@@ -1,0 +1,131 @@
+import os
+import base64
+from io import BytesIO
+import tempfile
+from flask import jsonify, request, send_file
+from PIL import Image, ImageOps
+import requests
+from gradio_client import Client, handle_file
+
+# Initialize the background removal model client.
+client = Client("ECCV2022/dis-background-removal")
+
+def replace_background(request):
+    """
+    Expects a multipart/form-data request with:
+      - file
+      - prompt
+      
+    Returns:
+      - On success: the final image as a binary PNG with MIME type "image/png".
+    """
+    # Verify that the file and prompt are provided.
+    if 'file' not in request.files:
+        return jsonify({"error": "Missing 'file' parameter."}), 400
+    if 'prompt' not in request.form:
+        return jsonify({"error": "Missing 'prompt' parameter."}), 400
+
+    file = request.files['file']
+    prompt = request.form['prompt']
+
+    if file.filename == "":
+        return jsonify({"error": "No file selected."}), 400
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
+        file.save(tmp)
+        tmp_path = tmp.name
+
+    try:
+        # Prepare the image for the background removal model
+        image_input = handle_file(tmp_path)
+        
+        #API model to remove the background.
+        result = client.predict(image=image_input, api_name="/predict")
+        # The model returns a list where result[0] is the foreground and result[1] is the mask
+        if len(result) < 2:
+            return jsonify({"error": "Model response does not contain mask data."}), 500
+
+        mask_data = result[1]
+
+        # Convert the returned mask into a PIL Image.
+        if isinstance(mask_data, str) and os.path.exists(mask_data):
+            mask = Image.open(mask_data)
+        elif isinstance(mask_data, bytes):
+            mask = Image.open(BytesIO(mask_data))
+        else:
+            mask = mask_data
+
+        # Convert the mask to grayscale if and invert it
+        if mask.mode != "L":
+            mask = mask.convert("L")
+        inverted_mask = ImageOps.invert(mask)
+
+    
+        original_image = Image.open(tmp_path)
+
+        #Convert a PIL Image to a base64-encoded string.
+        def pil_to_base64(img, fmt="JPEG"):
+            buffered = BytesIO()
+            img.save(buffered, format=fmt)
+            return base64.b64encode(buffered.getvalue()).decode('utf-8')
+
+        base64_image = pil_to_base64(original_image, "JPEG")
+        base64_mask = pil_to_base64(inverted_mask, "JPEG")
+
+        # Prepare the payload for the Segmind focus-inpaint API.
+        data = {
+            "prompt": prompt,
+            "negative_prompt": "lowquality, badquality, sketches",
+            "steps": 30,
+            "samples": 1,
+            "styles": [
+                "Fooocus V2",
+                "Fooocus Sharp",
+                "Fooocus Enhance"
+            ],
+            "aspect_ratios": "1024*1024",
+            "seed": 354849415,
+            "guidance_scale": 4,
+            "scheduler": "karras",
+            "base_model": "juggernaut_v8",
+            "sampler": "dpmpp_2m_sde_gpu",
+            "input_image": base64_image,
+            "input_mask": base64_mask,
+            "inpaint_erode_or_dilate": 1,
+            "inpaint_respective_field": 0.618,
+            "inpaint_strength": 1,
+            "invert_mask_checkbox": "False",
+            "mixing_image_prompt_and_inpaint": "True",
+            "faceswap_cn_stop": 0.9,
+            "faceswap_cn_weight": 0.8,
+            "imageprompt_cn_stop": 0.5,
+            "imageprompt_cn_weight": 0.6,
+            "pyracanny_cn_stop": 0.5,
+            "pyracanny_cn_weight": 1,
+            "cpds_cn_stop": 0.5,
+            "cpds_cn_weight": 1,
+            "base64": False
+        }
+
+        # Use API key (from environment variables or hardcoded).
+        os.environ["SEG_API_KEY"] = "SG_27a8861321289210"
+        headers = {'x-api-key': os.environ["SEG_API_KEY"]}
+        segmind_url = "https://api.segmind.com/v1/focus-inpaint"
+
+        segmind_response = requests.post(segmind_url, json=data, headers=headers)
+        if segmind_response.status_code == 200:
+            return send_file(BytesIO(segmind_response.content), mimetype="image/png")
+        else:
+            return jsonify({
+                "error": "Segmind API error",
+                "status_code": segmind_response.status_code,
+                "response": segmind_response.text
+            }), 500
+
+    except Exception as e:
+        return jsonify({"error": f"Exception: {str(e)}"}), 500
+
+    finally:
+        # Clean up the temporary file.
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
