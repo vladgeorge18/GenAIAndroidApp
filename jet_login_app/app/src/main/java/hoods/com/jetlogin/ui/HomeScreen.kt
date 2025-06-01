@@ -1,7 +1,7 @@
 @file:OptIn(ExperimentalMaterial3Api::class)
 
 package hoods.com.jetlogin.ui
-
+import androidx.compose.ui.text.AnnotatedString
 import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
@@ -114,192 +114,259 @@ import hoods.com.jetlogin.data.UserProfile
 import kotlinx.coroutines.tasks.await
 
 
-@Composable
-fun HomeScreen(onLogoutClick: () -> Unit, welcomeMessage: String, userName: String, onEditImageClick: () -> Unit) {
 
-    // Instead of just showing the userName, let's fetch the user profile from Firestore
+import androidx.compose.foundation.ExperimentalFoundationApi
+
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+
+import androidx.compose.material.icons.filled.ExitToApp
+import androidx.compose.material.icons.filled.LocalOffer
+import androidx.compose.material.icons.filled.PhotoFilter
+import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import kotlinx.coroutines.delay
+import androidx.compose.ui.graphics.Brush
+
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.ExperimentalAnimationApi
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
+
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material.icons.filled.AutoFixOff
+import androidx.compose.material.icons.filled.Check
+
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Create
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Style
+import androidx.compose.material3.AssistChipDefaults.assistChipBorder
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.window.Dialog
+import androidx.core.net.toUri
+import okio.BufferedSink
+import okio.source
+
+
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import okhttp3.MediaType
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody
+import java.io.File
+import kotlin.math.roundToInt
+
+import androidx.compose.material.icons.filled.Brush        // “pencil”
+import androidx.compose.material.icons.filled.CleaningServices
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.outlined.Tag
+import androidx.compose.ui.unit.Dp
+import kotlin.math.PI
+import kotlin.math.sin
+
+import androidx.compose.foundation.Canvas as ComposeCanvas
+import androidx.compose.ui.graphics.Path  as ComposePath
+import androidx.compose.ui.graphics.drawscope.Fill
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.unit.IntSize
+
+// -----------------------------------------------------------------------------
+// MAIN COMPOSABLE – updated "HomeScreen" that keeps *all* your existing logic
+// while giving it a fresh Material‑3 look & feel.
+// -----------------------------------------------------------------------------
+
+// -----------------------------------------------------------------------------
+//  HOME SCREEN – now with typing animation: "Welcome <first name>"
+// -----------------------------------------------------------------------------
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@Composable
+fun HomeScreen(
+    onLogoutClick: () -> Unit,
+    welcomeMessage: String, // still here in case you want to fall back
+    userName: String,
+    onEditImageClick: () -> Unit,
+) {
+    // ---------------------------------------------------------------------
+    // Firebase + state
+    // ---------------------------------------------------------------------
     val auth = FirebaseAuth.getInstance()
     val firestore = FirebaseFirestore.getInstance()
     val currentUser = auth.currentUser
 
-    // We'll store the fetched profile data in a state
     var userProfile by remember { mutableStateOf<UserProfile?>(null) }
     val scope = rememberCoroutineScope()
 
-    val context = LocalContext.current
-    var dynamicMessage: String by remember { mutableStateOf(welcomeMessage) }
-    var showRephraseScreen by remember { mutableStateOf(false) } // Controls the visibility
+    // Typing‑effect state
+    var typedGreeting by remember { mutableStateOf("") }
+
+    // Sheet visibility
+    var showRephraseScreen by remember { mutableStateOf(false) }
     var showGenerateImageScreen by remember { mutableStateOf(false) }
     var showGenerateDescriptionScreen by remember { mutableStateOf(false) }
     var showGenerateHashtagsScreen by remember { mutableStateOf(false) }
     var showSketchScreen by remember { mutableStateOf(false) }
+    var showStyleTransferScreen by remember { mutableStateOf(false) }
 
-    val onFeatureClick: (String) -> Unit = { featureName ->
-        if (featureName == "Rephrase Text") {
-            showRephraseScreen = true
-        }
-        if (featureName == "Create an Image"){
-            showGenerateImageScreen = true
-        }
-        if (featureName == "Edit Image"){
-            onEditImageClick()
-        }
-        if (featureName == "Generate a Description"){
-            showGenerateDescriptionScreen = true
-        }
-        if (featureName == "Generate Hashtags"){
-            showGenerateHashtagsScreen = true
-        }
-        if (featureName == "Sketch to Image"){
-            showSketchScreen = true
+    val onFeatureClick: (String) -> Unit = { name ->
+        when (name) {
+            "Rephrase Text" -> showRephraseScreen = true
+            "Create an Image" -> showGenerateImageScreen = true
+            "Edit Image" -> onEditImageClick()
+            "Generate a Description" -> showGenerateDescriptionScreen = true
+            "Generate Hashtags" -> showGenerateHashtagsScreen = true
+            "Sketch to Image" -> showSketchScreen = true
+            "Style Change" -> showStyleTransferScreen = true
         }
     }
-    // API Call to greet_user
-    LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) {
-        val apiUrl =
-            "https://us-central1-speedy-web-456812-s7.cloudfunctions.net/greet_user?username=$userName"
-        val client = OkHttpClient()
-        val request = Request.Builder()
-            .url(apiUrl)
-            .build()
-        try {
-            val response = client.newCall(request).execute()
-            if (response.isSuccessful) {
-                val responseBody = response.body?.string() ?: "Failed to parse response"
-                dynamicMessage = responseBody
-            } else {
-                dynamicMessage = "Failed to fetch welcome message1."
-            }
-        } catch (e: Exception) {
-            dynamicMessage = "Failed to fetch welcome message2."
-            Log.e("HomeScreen", "Exception: ${e.message}", e)
-        }
-    }
-}
 
-    // Firestore fetch side-effect
+    // ---------------------------------------------------------------------
+    // SIDE‑EFFECTS
+    // ---------------------------------------------------------------------
     LaunchedEffect(currentUser) {
         if (currentUser != null) {
             scope.launch {
                 try {
-                    val docSnap = firestore.collection("users")
-                        .document(currentUser.uid)
-                        .get()
-                        .await()
-                    val profile = docSnap.toObject(UserProfile::class.java)
-                    userProfile = profile
+                    val snap = firestore.collection("users").document(currentUser.uid).get().await()
+                    userProfile = snap.toObject(UserProfile::class.java)
                 } catch (e: Exception) {
-                    Log.e("HomeScreen", "Error: ${e.message}", e)
+                    Log.e("HomeScreen", "Profile fetch error", e)
                 }
             }
         }
     }
 
-    Box(Modifier.fillMaxSize()) {
-        Text(
-            text = welcomeMessage,
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(16.dp)
+    // Trigger typing effect when profile is ready
+    LaunchedEffect(userProfile?.firstName) {
+        userProfile?.let { profile ->
+            val fullText = "Welcome, ${profile.firstName}!"
+            typedGreeting = ""
+            fullText.forEachIndexed { index, _ ->
+                typedGreeting = fullText.substring(0, index + 1)
+                delay(45) // speed of the typing
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // UI – Scaffold with gradient, TopAppBar, Profile header & Feature grid
+    // ---------------------------------------------------------------------
+    val gradient = Brush.verticalGradient(
+        colors = listOf(
+            MaterialTheme.colorScheme.primaryContainer.copy(alpha = .35f),
+            MaterialTheme.colorScheme.surface
         )
+    )
 
-
-        // Scrollable Feature List in the Center
+    Scaffold(
+        modifier = Modifier.background(gradient),
+        topBar = {
+            CenterAlignedTopAppBar(
+                title = {
+                    Text(
+                        text = if (typedGreeting.isNotBlank()) typedGreeting else "Welcome",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                },
+                actions = {
+                    IconButton(onClick = {
+                        FirebaseAuth.getInstance().signOut()
+                        onLogoutClick()
+                    }) { Icon(Icons.Default.ExitToApp, contentDescription = "Logout") }
+                }
+            )
+        }
+    ) { innerPadding ->
         Column(
             modifier = Modifier
+                .padding(innerPadding)
                 .fillMaxSize()
-                .padding(horizontal = 32.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
         ) {
-            // If userProfile is loaded, show a small "Profile" section
-            userProfile?.let { profile ->
-                Text("Profile Info:")
-                Text("First Name: ${profile.firstName}")
-                Text("Last Name: ${profile.lastName}")
-                Text("User Name: ${profile.userName}")
-                Text("Email: ${profile.email}")
-            }
+            // 1️⃣ PROFILE HEADER ---------------------------------------------------
+            userProfile?.let { ProfileHeader(it) }
 
-            LazyColumn(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally
+            // 2️⃣ FEATURE GRID ----------------------------------------------------
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(2),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                modifier = Modifier.weight(1f)
             ) {
-                items(dummyFeatures) { feature ->
-                    FeatureItem(feature, onFeatureClick)
+                items(dummyFeatures, key = { it.name }) { feature ->
+                    FeatureCard(feature) { onFeatureClick(feature.name) }
                 }
             }
         }
-        Button(
-            onClick = {
-                // Sign out from Firebase
-                FirebaseAuth.getInstance().signOut()
-                onLogoutClick()
-            },
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(16.dp)
-        ) {
-            Text("Logout")
-        }
     }
+
+    // ---------------------------------------------------------------------
+    // BOTTOM‑SHEETS (unchanged – just moved below Scaffold)
+    // ---------------------------------------------------------------------
     if (showRephraseScreen) {
-        // Create a persistent sheet state without the initialValue parameter.
-        val sheetState = rememberModalBottomSheetState(
-            skipPartiallyExpanded = true
-        )
-        // Ensure the bottom sheet is shown when the sheet appears.
-        LaunchedEffect(Unit) {
-            sheetState.show()
-        }
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        LaunchedEffect(Unit) { sheetState.show() }
         ModalBottomSheet(
             onDismissRequest = { showRephraseScreen = false },
-            sheetState = sheetState,
-        ) {
-            RephraseScreen(onClose = { showRephraseScreen = false })
-        }
+            sheetState = sheetState
+        ) { RephraseScreen { showRephraseScreen = false } }
     }
 
     if (showGenerateImageScreen) {
-        // Create a persistent sheet state without the initialValue parameter
-        val sheetState = rememberModalBottomSheetState(
-            skipPartiallyExpanded = true
-        )
-        // Ensure the bottom sheet is shown when the sheet appears
-        LaunchedEffect(Unit) {
-            sheetState.show()
-        }
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        LaunchedEffect(Unit) { sheetState.show() }
         ModalBottomSheet(
             onDismissRequest = { showGenerateImageScreen = false },
-            sheetState = sheetState,
+            sheetState = sheetState
         ) {
             GenerateImageScreen(
                 onClose = { showGenerateImageScreen = false },
                 onImageGenerated = {
                     showGenerateImageScreen = false
-                    // Navigate to EditImageScreen.
-                    onEditImageClick() })
+                    onEditImageClick()
+                }
+            )
         }
     }
 
     if (showGenerateDescriptionScreen) {
-        val sheetState = rememberModalBottomSheetState(
-            skipPartiallyExpanded = true
-        )
-
-        LaunchedEffect(Unit) {
-            sheetState.show()
-        }
-
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        LaunchedEffect(Unit) { sheetState.show() }
         ModalBottomSheet(
             onDismissRequest = { showGenerateDescriptionScreen = false },
-            sheetState = sheetState,
-        ) {
-            GenerateDescriptionScreen(
-                onClose = { showGenerateDescriptionScreen = false }
-            )
-        }
+            sheetState = sheetState
+        ) { GenerateDescriptionScreen { showGenerateDescriptionScreen = false } }
     }
 
     if (showGenerateHashtagsScreen) {
@@ -307,38 +374,123 @@ fun HomeScreen(onLogoutClick: () -> Unit, welcomeMessage: String, userName: Stri
         LaunchedEffect(Unit) { sheetState.show() }
         ModalBottomSheet(
             onDismissRequest = { showGenerateHashtagsScreen = false },
-            sheetState = sheetState,
-        ) {
-            GenerateHashtagsScreen(onClose = { showGenerateHashtagsScreen = false })
-        }
+            sheetState = sheetState
+        ) { GenerateHashtagsScreen { showGenerateHashtagsScreen = false } }
     }
+
     if (showSketchScreen) {
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         LaunchedEffect(Unit) { sheetState.show() }
         ModalBottomSheet(
             onDismissRequest = { showSketchScreen = false },
             sheetState = sheetState
+        ) { SketchScreen(
+            onClose      = { showSketchScreen = false },
+            onImageReady = {
+                showSketchScreen = false
+                onEditImageClick()
+            }
+        ) }
+    }
+
+    if (showStyleTransferScreen) {
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        LaunchedEffect(Unit) { sheetState.show() }
+        ModalBottomSheet(
+            onDismissRequest = { showStyleTransferScreen = false },
+            sheetState = sheetState
         ) {
-            SketchScreen(
-                onClose = { showSketchScreen = false }
+            StyleTransferScreen(
+                onClose      = { showStyleTransferScreen = false },
+                onImageReady = {
+                    showStyleTransferScreen = false
+                    onEditImageClick()
+                }
             )
         }
     }
 
-
 }
-// Dummy Data for Features
+
+// -----------------------------------------------------------------------------
+// SUB‑COMPOSABLES – ProfileHeader & FeatureCard
+// -----------------------------------------------------------------------------
+
+@Composable
+private fun ProfileHeader(profile: UserProfile) {
+    /*
+     * If you store an avatar/photo URL in Firestore, simply expose that property
+     * inside your UserProfile data class and swap the Surface block below for an
+     * AsyncImage. Until then, we display the user’s initials.
+     */
+    ElevatedCard(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Surface(
+                color = MaterialTheme.colorScheme.primaryContainer,
+                shape = MaterialTheme.shapes.large,
+                modifier = Modifier.size(56.dp)
+            ) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        profile.firstName.firstOrNull()?.uppercase() ?: "?",
+                        style = MaterialTheme.typography.titleLarge
+                    )
+                }
+            }
+            Spacer(Modifier.width(12.dp))
+            Column {
+                Text("${profile.firstName} ${profile.lastName}", style = MaterialTheme.typography.titleMedium)
+                Text(profile.email, style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+    }
+}
+
+@Composable
+private fun FeatureCard(feature: Feature, onClick: () -> Unit) {
+    ElevatedCard(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(1f)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(feature.icon, contentDescription = null, modifier = Modifier.size(36.dp))
+            Spacer(Modifier.height(8.dp))
+            Text(feature.name, fontSize = 14.sp)
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------
+// DUMMY DATA
+// -----------------------------------------------------------------------------
+
 data class Feature(val name: String, val icon: ImageVector)
 
 val dummyFeatures = listOf(
-    Feature("Rephrase Text", Icons.Default.Edit),
+    Feature("Rephrase Text", Icons.Filled.Edit),
     Feature("Create an Image", Icons.Outlined.Image),
-    Feature("Edit Image", Icons.Default.PhotoFilter),
-    Feature("Generate a Description", Icons.Default.Description),
-    Feature("Generate Hashtags", Icons.Default.LocalOffer),
-    Feature("Sketch to Image", Icons.Default.Brush),
-
+    Feature("Edit Image", Icons.Filled.PhotoFilter),
+    Feature("Generate a Description", Icons.Filled.Description),
+    //("Generate Hashtags", Icons.Filled.LocalOffer),
+    Feature("Sketch to Image", Icons.Filled.Brush),
+    Feature("Style Change", Icons.Filled.Style),
 )
+
 
 // Feature Item UI
 @Composable
@@ -358,297 +510,599 @@ fun FeatureItem(feature: Feature, onFeatureClick: (String) -> Unit) {
     }
 }
 
+/* ──────────────────────────────────────────────────────────────
+   1.  RephraseTextScreen – UI that mirrors GenerateDescription
+   ──────────────────────────────────────────────────────────── */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun RephraseScreen(onClose: () -> Unit) {
-    var inputText by remember { mutableStateOf("") }
-    var rephrasedText by remember { mutableStateOf("") }
-    var isLoading by remember { mutableStateOf(false) }
+fun RephraseScreen(
+    onClose: () -> Unit
+) {
+    val ctx   = LocalContext.current
+    val scope = rememberCoroutineScope()
 
-    // Dropdown states
-    var expanded by remember { mutableStateOf(false) }
-    var selectedStyle by remember { mutableStateOf("Instagram") }
-    val styles = listOf("Instagram", "LinkedIn", "Facebook")
-    val coroutineScope = rememberCoroutineScope()
+    /*  state  */
+    var inputText     by rememberSaveable { mutableStateOf("") }
+    var platform      by rememberSaveable { mutableStateOf("Instagram") }
+    var audienceText  by rememberSaveable { mutableStateOf("") }
+    var includeTags   by rememberSaveable { mutableStateOf(false) }
 
-    Column(
-        modifier = Modifier
+    var loading       by rememberSaveable { mutableStateOf(false) }
+    var rephrased     by rememberSaveable { mutableStateOf("") }
+
+    /*  static lists  */
+    val platforms  = listOf("Instagram", "LinkedIn", "Facebook")
+    val audiences  = listOf(
+        "Casual users & lifestyle followers",
+        "Influencers & content creators",
+        "Gen Z & Millennials",
+        "Photography & art lovers",
+        "Brand & business marketing",
+        "Corporate professionals"
+    )
+
+    /*  animated gradient title  */
+    val fullTitle = "Rephrase Text"
+    var title     by remember { mutableStateOf("") }
+    LaunchedEffect(Unit) {
+        fullTitle.forEachIndexed { i, _ ->
+            title = fullTitle.substring(0, i + 1); delay(35)
+        }
+    }
+    val gradientStyle = MaterialTheme.typography.headlineMedium.copy(
+        brush         = Brush.horizontalGradient(
+            listOf(
+                MaterialTheme.colorScheme.primary,
+                MaterialTheme.colorScheme.tertiary
+            )
+        ),
+        fontWeight    = FontWeight.ExtraBold,
+        letterSpacing = 1.5.sp
+    )
+
+    /*  scaffold identical to GenerateDescription  */
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+
+    Box(
+        Modifier
             .fillMaxWidth()
-            .fillMaxHeight(0.90f)
-            .padding(16.dp)
+            .fillMaxHeight(0.8f)
     ) {
-        // Close Button
-        Box(modifier = Modifier.fillMaxWidth()) {
-            Text(
-                text = "X",
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .clickable { onClose() }
-                    .padding(8.dp),
-                fontSize = 24.sp
+        BottomWaveGradient(
+            modifier   = Modifier.matchParentSize(),
+            bandHeight = 100.dp,
+            fadeHeight = 100.dp,
+            waveAmp    = 24.dp,
+            waveLen    = 600.dp
+        )
+        Scaffold(
+            modifier = Modifier
+                .fillMaxSize()
+                .nestedScroll(scrollBehavior.nestedScrollConnection),
+            containerColor = Color.Transparent,
+            topBar = {
+                LargeTopAppBar(
+                    title = { Text(title, style = gradientStyle) },
+                    navigationIcon = {
+                        IconButton(onClick = onClose) {
+                            Icon(Icons.Default.Close, null)
+                        }
+                    },
+                    colors = TopAppBarDefaults.largeTopAppBarColors(
+                        containerColor = Color.Transparent
+                    ),
+                    scrollBehavior = scrollBehavior
+                )
+            },
+            floatingActionButton = {
+                AnimatedVisibility(
+                    visible = inputText.isNotBlank() && !loading,
+                    enter   = scaleIn() + fadeIn(),
+                    exit    = scaleOut() + fadeOut()
+                ) {
+                    ExtendedFloatingActionButton(
+                        icon = {
+                            if (loading)
+                                CircularProgressIndicator(
+                                    Modifier.size(18.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            else
+                                Icon(Icons.Default.PlayArrow, null)
+                        },
+                        text = { Text("Rephrase") },
+                        onClick = {
+                            scope.launch {
+                                loading = true; rephrased = ""
+                                rephrased = fetchRephrasedText(
+                                    text     = inputText,
+                                    platform = platform,
+                                    target   = audienceText.ifBlank { "General" },
+                                    hashtags = if (includeTags) "Yes" else "No"
+                                )
+                                loading = false
+                            }
+                        }
+                    )
+                }
+            }
+        ) { innerPadding ->
+
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 24.dp),
+                horizontalAlignment = Alignment.Start
+            ) {
+                Spacer(Modifier.height(20.dp))
+
+                /* ───── text to rephrase ───── */
+                Text("Text to rephrase", style = MaterialTheme.typography.labelMedium)
+                OutlinedTextField(
+                    value         = inputText,
+                    onValueChange = { inputText = it },
+                    placeholder   = { Text("Paste or type your text here…") },
+                    shape         = MaterialTheme.shapes.medium,
+                    modifier      = Modifier
+                        .fillMaxWidth()
+                        .heightIn(100.dp, 180.dp)
+                )
+
+                Spacer(Modifier.height(20.dp))
+
+                /* ───── platform chips ───── */
+                Text("Platform", style = MaterialTheme.typography.labelMedium)
+                Row(Modifier.padding(top = 4.dp)) {
+                    platforms.forEach { p ->
+                        FilterChip(
+                            selected   = platform == p,
+                            onClick    = { platform = p },
+                            label      = { Text(p) },
+                            leadingIcon = if (platform == p) {
+                                { Icon(Icons.Default.Check, null) }
+                            } else null,
+                            modifier   = Modifier.padding(end = 8.dp)
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                /* ───── target audience ───── */
+                Text("Target audience", style = MaterialTheme.typography.labelMedium)
+                OutlinedTextField(
+                    value         = audienceText,
+                    onValueChange = { audienceText = it },
+                    placeholder   = { Text("Describe your audience…") },
+                    leadingIcon   = { Icon(Icons.Default.Person, null) },
+                    shape         = MaterialTheme.shapes.medium,
+                    modifier      = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(Modifier.horizontalScroll(rememberScrollState())) {
+                    audiences.forEach { suggestion ->
+                        AssistChip(
+                            onClick = { audienceText = suggestion },
+                            label   = { Text(suggestion, maxLines = 1) },
+                            modifier = Modifier.padding(end = 8.dp)
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                /* ───── include hashtags option ───── */
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked          = includeTags,
+                        onCheckedChange  = { includeTags = it }
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Icon(Icons.Outlined.Tag, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Include hashtags")
+                }
+
+                Spacer(Modifier.height(120.dp)) // keep clear of the FAB
+            }
+
+            /* ───── overlay loader & result card ───── */
+            if (loading) SweepLoader()
+
+            RephrasedTextCard(
+                text      = rephrased,
+                title =     "Rephrased Text",
+                onDismiss = { rephrased = "" }
             )
         }
-        // Title
-        Text("Rephrase Text", style = MaterialTheme.typography.headlineSmall)
-        Spacer(modifier = Modifier.height(16.dp))
-        // Input Text Field with max height & scrolling
-        Text("Enter text to rephrase:")
+    }
+}
+
+/* ──────────────────────────────────────────────────────────────
+   2.  Result-card for the rephrased text
+   ──────────────────────────────────────────────────────────── */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RephrasedTextCard(
+    text: String,
+    title: String,
+    onDismiss: () -> Unit
+) {
+    if (text.isBlank()) return
+    val clipboardManager = LocalClipboardManager.current
+    val screenHeight = LocalConfiguration.current.screenHeightDp
+    val maxCardHeight = (screenHeight * 0.5f).dp
+
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = {
+            if (it != SwipeToDismissBoxValue.Settled) { onDismiss(); true } else false
+        }
+    )
+
+    Dialog(onDismissRequest = onDismiss) {
+
+        /* ① take the whole overlay & decide where the card lives   */
         Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 56.dp, max = 200.dp) // Limits size but allows scrolling
-                .border(1.dp, Color.Gray, RoundedCornerShape(8.dp))
-                .background(Color.White)
+                .fillMaxSize(),                 // full screen
+            contentAlignment = Alignment.TopCenter  // still center-horiz, top-vert
         ) {
-            TextField(
-                value = inputText,
-                onValueChange = { inputText = it },
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState()),
-                maxLines = 6,
-                keyboardOptions = KeyboardOptions.Default.copy(
-                    keyboardType = KeyboardType.Text
-                )
-            )
-        }
 
-        Spacer(modifier = Modifier.height(16.dp))
+            /* ② vertical shift ↓ (choose whichever feels best) */
+            val yOffset = 360.dp                // <-- tweak this distance
+            SwipeToDismissBox(
+                state = dismissState,
+                modifier = Modifier.offset {
+                    // convert dp → px
+                    IntOffset(0, yOffset.roundToPx())
+                },
+                backgroundContent = {}
+            ) {
+                Surface(
+                    shape = MaterialTheme.shapes.medium,
+                    tonalElevation = 4.dp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp)  // horizontal margin only
+                        .sizeIn(maxHeight = maxCardHeight)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .padding(24.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(title, style = MaterialTheme.typography.titleMedium)
+                            Row {
+                                // 2. Copy button
+                                IconButton(onClick = {
+                                    // Copy the entire 'text' into clipboard
+                                    clipboardManager.setText(AnnotatedString(text))
+                                }) {
+                                    Icon(
+                                        imageVector = Icons.Default.ContentCopy,
+                                        contentDescription = "Copy text"
+                                    )
+                                }
 
-        // Dropdown for selecting rephrase style
-        Text("Select rephrase style:")
-        RephraseDropdown(selectedStyle = selectedStyle, onStyleSelected = { selectedStyle = it })
+                                IconButton(onClick = onDismiss) {
+                                    Icon(Icons.Default.Close, null)
+                                }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Rephrase Button (disabled while loading)
-        Button(
-            onClick = {
-                coroutineScope.launch {
-                    isLoading = true
-                    // Call  API
-                    rephrasedText = fetchRephrasedText(inputText, selectedStyle)
-                    isLoading = false
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Text(text, style = MaterialTheme.typography.bodyLarge)
+                    }
                 }
-            },
-            modifier = Modifier.fillMaxWidth(),
-            enabled = !isLoading // Disable the button when loading
-        ) {
-            Text("Rephrase")
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Loading indicator
-        if (isLoading) {
-            Box(
-                modifier = Modifier.fillMaxWidth(),
-                contentAlignment = Alignment.Center
-            ) {
-                CircularProgressIndicator()
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-        }
-
-        // Output Text Box
-        if (rephrasedText.isNotEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 56.dp, max = 200.dp)
-                    .border(1.dp, Color.Gray, RoundedCornerShape(8.dp))
-                    .padding(8.dp)
-                    .verticalScroll(rememberScrollState())
-            ) {
-                Text(
-                    text = rephrasedText,
-                    fontSize = 18.sp
-                )
             }
         }
     }
 }
 
+/* ──────────────────────────────────────────────────────────────
+   3.  fetchRephrasedText – multipart, matches Cloud Function
+   ──────────────────────────────────────────────────────────── */
+suspend fun fetchRephrasedText(
+    text: String,
+    platform: String,
+    target: String,
+    hashtags: String
+): String = withContext(Dispatchers.IO) {
+    try {
+        /* --- multipart body ----- */
+        val body = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart("text", text)
+            .addFormDataPart("platform", platform)
+            .addFormDataPart("target", target)
+            .addFormDataPart("hashtags", hashtags)
+            .build()
+
+        val request = Request.Builder()
+            .url("https://us-central1-speedy-web-456812-s7.cloudfunctions.net/rephrase_text")
+            .post(body)
+            .build()
+
+        val client = OkHttpClient.Builder()
+            .connectTimeout(60, TimeUnit.SECONDS)
+            .readTimeout(60, TimeUnit.SECONDS)
+            .writeTimeout(60, TimeUnit.SECONDS)
+            .build()
+
+        val response = client.newCall(request).execute()
+        if (response.isSuccessful) {
+            val responseBody = response.body?.string() ?: ""
+            val jsonObj      = JSONObject(responseBody)
+            /*  Cloud Function returns { "caption": "…" }  */
+            jsonObj.optString("caption", "No text returned")
+        } else {
+            "Error: Code ${response.code} – ${response.message}"
+        }
+    } catch (e: Exception) {
+        "Exception: ${e.message}"
+    }
+}
+
 @Composable
-fun RephraseDropdown(
-    selectedStyle: String,
-    onStyleSelected: (String) -> Unit
+fun BottomWaveGradient(
+    modifier:   Modifier = Modifier,
+    bandHeight: Dp = 260.dp,   // total coloured thickness
+    fadeHeight: Dp = 180.dp,   // how far it fades to white
+    waveAmp:    Dp = 24.dp,    // crest height   (smaller → smoother)
+    waveLen:    Dp = 600.dp,   // crest spacing  (larger → smoother)
+    speedMs:    Int = 12_000   // time for a full sideways cycle
 ) {
-    var expanded by remember { mutableStateOf(false) }
-    val styles = listOf("Instagram", "LinkedIn", "Facebook")
+    /* grab the colours while we’re still in @Composable scope */
+    val c1 = MaterialTheme.colorScheme.primary
+    val c2 = MaterialTheme.colorScheme.tertiary
 
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = { expanded = !expanded },
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        // Anchor TextField
-        TextField(
-            readOnly = true,
-            value = selectedStyle,
-            onValueChange = { },
-            label = { Text("Rephrase Style") },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-            modifier = Modifier
-                .fillMaxWidth()
-                .menuAnchor()
+    val density = LocalDensity.current
+
+    /* horizontal phase animation only */
+    val phase by rememberInfiniteTransition("phase").animateFloat(
+        initialValue = 0f,
+        targetValue  = (2f * PI).toFloat(),
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = speedMs, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "wavePhase"
+    )
+
+    ComposeCanvas(modifier) {
+        val bandH  = with(density) { bandHeight.toPx() }
+        val fadeH  = with(density) { fadeHeight.toPx() }
+        val amp    = with(density) { waveAmp.toPx() }
+        val lambda = with(density) { waveLen.toPx() }
+        val step   = 16.dp.toPx()              // sampling granularity
+
+        /* top of coloured band sits a fixed distance from bottom */
+        val topY = size.height - bandH
+
+        /* build the wavy top edge */
+        val path = ComposePath().apply {
+            moveTo(0f, topY)
+            var x = 0f
+            while (x <= size.width) {
+                val y = topY + amp * sin((x / lambda) * 2f * PI.toFloat() + phase)
+                lineTo(x, y)
+                x += step
+            }
+            /* close downward so the area below gets filled */
+            lineTo(size.width, size.height)
+            lineTo(0f,          size.height)
+            close()
+        }
+
+        /* vertical gradient: colour → transparent white */
+        drawPath(
+            path = path,
+            brush = Brush.verticalGradient(
+                colorStops = arrayOf(
+                    0.0f to c1,                        // deepest part
+                    0.6f to c2,                        // mid‑blend
+                    1.0f to Color.Transparent          // fade to screen bg
+                ),
+                startY = topY + bandH,                // bottom of screen
+                endY   = topY - fadeH                 // height where it’s clear
+            ),
+            style = Fill
         )
-        ExposedDropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false }
-        ) {
-            styles.forEach { style ->
-                DropdownMenuItem(
-                    onClick = {
-                        onStyleSelected(style)
-                        expanded = false
-                    },
-                    text = { Text(text = style) }
-                )
-            }
-        }
     }
 }
 
 
-// Dummy rephrase function based on the selected style.
-fun rephraseText(text: String, style: String): String {
-    return when (style) {
-        "Instagram" -> "Instagram-style: $text"
-        "LinkedIn" -> "LinkedIn-style: $text"
-        "Facebook" -> "Facebook-style: $text"
-        else -> "Rephrased: $text"
-    }
-}
 
-
-suspend fun fetchRephrasedText(text: String, platform: String): String =
-    withContext(Dispatchers.IO) {
-        try {
-            // URL-encode the text
-            val encodedText = URLEncoder.encode(text, "UTF-8")
-            // Construct the URL (update with your Cloud Function's URL)
-            val url = "https://us-central1-speedy-web-456812-s7.cloudfunctions.net/rephrase_text?text=$encodedText&platform=$platform"
-            val client = OkHttpClient.Builder()
-                .connectTimeout(60, TimeUnit.SECONDS)
-                .readTimeout(60, TimeUnit.SECONDS)
-                .writeTimeout(60, TimeUnit.SECONDS)
-                .build()
-            val request = Request.Builder().url(url).build()
-            val response = client.newCall(request).execute()
-
-            if (response.isSuccessful) {
-                val responseBody = response.body?.string() ?: ""
-                val jsonObj = JSONObject(responseBody)
-                jsonObj.optString("rephrased_text", "No text returned")
-            } else {
-                "Error: Code ${response.code}"
-            }
-        } catch (e: Exception) {
-            "Exception: ${e.message}"
-        }
-    }
-
-
-////
-
-@OptIn(ExperimentalEncodingApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalEncodingApi::class)
 @Composable
-fun GenerateImageScreen(onClose: () -> Unit, onImageGenerated: (Bitmap) -> Unit) {
+fun GenerateImageScreen(
+    onClose: () -> Unit,
+    onImageGenerated: (Bitmap) -> Unit
+) {
+    val scope = rememberCoroutineScope()
+
     var promptText by remember { mutableStateOf("") }
     var generatedImage by remember { mutableStateOf<Bitmap?>(null) }
     var isLoading by remember { mutableStateOf(false) }
-    val coroutineScope = rememberCoroutineScope()
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .fillMaxHeight(0.60f)
-            .padding(16.dp)
-    ) {
-        // Close Button
-        Box(modifier = Modifier.fillMaxWidth()) {
-            Text(
-                text = "X",
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .clickable { onClose() }
-                    .padding(8.dp),
-                fontSize = 24.sp
+    // -------- Typing animation for header --------
+    val fullHeader = "Generate an Image"
+    var typedHeader by remember { mutableStateOf("") }
+
+    val density = LocalDensity.current                   // for dp ↔ px
+    val bgShift   = rememberInfiniteTransition(label = "bgShift")
+    val yOffset by bgShift.animateFloat(
+        initialValue = 0f,
+        targetValue  = with(density) { 400.dp.toPx() },  // how far the band travels
+        animationSpec = infiniteRepeatable(
+            tween(durationMillis = 2000, easing = LinearEasing), // one full cycle = 20 s
+            RepeatMode.Reverse
+        ),
+        label = "bgOffset"
+    )
+
+    val gradientStyle = MaterialTheme.typography.headlineMedium.copy(
+        brush = Brush.horizontalGradient(
+            listOf(
+                MaterialTheme.colorScheme.primary,
+                MaterialTheme.colorScheme.tertiary
             )
+        ),
+        fontWeight    = FontWeight.ExtraBold,
+        letterSpacing = 1.5.sp
+    )
+
+    LaunchedEffect(Unit) {
+        fullHeader.forEachIndexed { i, _ ->
+            typedHeader = fullHeader.substring(0, i + 1)
+            delay(45)
         }
+    }
 
-        // Title
-        Text("Generate Image", style = MaterialTheme.typography.headlineSmall)
-        Spacer(modifier = Modifier.height(16.dp))
 
-        // Input Text Field for prompt
-        Text("Enter prompt for image generation:")
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 56.dp, max = 200.dp)
-                .border(1.dp, Color.Gray, RoundedCornerShape(8.dp))
-                .background(Color.White)
-        ) {
-            TextField(
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .fillMaxHeight(0.65f)
+            //.background(animatedBg)
+    ) {
+        BottomWaveGradient(
+            modifier   = Modifier.matchParentSize(),
+            bandHeight = 200.dp,           // tweak to taste
+            fadeHeight = 100.dp,
+            waveAmp    = 24.dp,
+            waveLen    = 600.dp
+        )
+        // ------------- Main content -------------
+        Column(Modifier.matchParentSize().padding(24.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(typedHeader, style = gradientStyle)          // ← was headlineSmall
+                Spacer(Modifier.weight(1f))
+                IconButton(onClick = onClose) { Icon(Icons.Default.Close, null) }
+            }
+
+            Spacer(Modifier.height(8.dp))
+            Text("Prompt", style = MaterialTheme.typography.labelMedium)
+            OutlinedTextField(
                 value = promptText,
                 onValueChange = { promptText = it },
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState()),
-                maxLines = 6,
-                keyboardOptions = KeyboardOptions.Default.copy(keyboardType = KeyboardType.Text)
+                placeholder = { Text("Describe what you’d like to see…") },
+                leadingIcon = { Icon(Icons.Default.Image, null) },
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.medium,
+                maxLines = 4
+            )
+
+            val suggestions = listOf(
+                "A neon cyberpunk alley at night",
+                "A watercolor cat astronaut",
+                "Papercraft tropical island",
+                "Unicorn in the desert"
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.horizontalScroll(rememberScrollState())) {
+                suggestions.forEach { s ->
+                    AssistChip(
+                        onClick = { promptText = s },
+                        label = { Text(s, maxLines = 1) },
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            AnimatedVisibility(generatedImage != null) {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    elevation = CardDefaults.elevatedCardElevation(),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Crossfade(targetState = generatedImage) { bmp ->
+                        bmp?.let {
+                            androidx.compose.foundation.Image(
+                                bitmap = it.asImageBitmap(),
+                                contentDescription = null,
+                                modifier = Modifier.fillMaxWidth().height(300.dp)
+                            )
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(70.dp))
+        }
+        AnimatedVisibility(
+            visible = promptText.isNotBlank() && !isLoading,
+            enter   = scaleIn() + fadeIn(),
+            exit    = scaleOut() + fadeOut(),
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .offset(y = (-96).dp)
+                .offset(x = (-24).dp)
+        ) {
+            ExtendedFloatingActionButton(
+                icon = {
+                    if (isLoading)
+                        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    else
+                        Icon(Icons.Default.PlayArrow, null)
+                },
+                text = { Text("Generate") },
+                onClick = {
+                    scope.launch {
+                        isLoading      = true
+                        generatedImage = null
+                        val bmp = fetchGeneratedImage(promptText)
+                        isLoading      = false
+                        bmp?.let {
+                            ImageHolder.generatedImage = it
+                            generatedImage             = it
+                            onImageGenerated(it)
+                        } ?: Log.e("GenerateImageScreen", "Failed to generate image")
+                    }
+                }
             )
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Generate Button
-        Button(
-            onClick = {
-                coroutineScope.launch {
-                    isLoading = true
-                    // Call real API function to fetch the image using the prompt text.
-                    val image = fetchGeneratedImage(promptText)
-                    isLoading = false
-                    if (image != null) {
-                        Log.d("GenerateImageScreen", "Real image generated: ${image.width}x${image.height}")
-                        // Store the generated image in the singleton
-                        ImageHolder.generatedImage = image
-                        // Pass the generated image so that navigation can occur.
-                        onImageGenerated(image)
-                    } else {
-                        Log.e("GenerateImageScreen", "Failed to generate image")
-
-                    }
-                }
-            },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Generate")
-        }
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Loading indicator
+        // ------------- Loading overlay -------------
         if (isLoading) {
+            // Infinite transition animating vertical offset 0f -> 1f
+            val transition = rememberInfiniteTransition(label = "fadeSweep")
+            val anim by transition.animateFloat(
+                initialValue = -1f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    tween(durationMillis = 1600, easing = LinearEasing),
+                    RepeatMode.Restart
+                ),
+                label = "offset"
+            )
+
+            // Gradient for sweeping fade
+            val fadeBrush = Brush.verticalGradient(
+                0f to Color.Transparent,
+                0.3f to Color.White.copy(alpha = 0.55f),
+                0.7f to Color.White.copy(alpha = 0.55f),
+                1f to Color.Transparent,
+                startY = 0f,
+                endY = 300f
+            )
+
+            // Overlay box with animated alpha/translationY
             Box(
-                modifier = Modifier.fillMaxWidth(),
-                contentAlignment = Alignment.Center
-            ) {
-                CircularProgressIndicator()
-            }
-            Spacer(modifier = Modifier.height(16.dp))
+                Modifier
+                    .matchParentSize()
+                    .graphicsLayer { translationY = anim * size.height }
+                    .background(fadeBrush)
+            )
         }
-        // Display the generated image if available.
-       // generatedImage?.let { image ->
-       //     Image(
-       //         bitmap = image.asImageBitmap(),
-        //        contentDescription = "Generated Image",
-        //        modifier = Modifier
-        //            .fillMaxWidth()
-        //            .height(300.dp)
-        //    )
-       // }
     }
 }
 
@@ -685,292 +1139,246 @@ suspend fun fetchGeneratedImage(prompt: String): Bitmap? {
         }
 }
 
-@OptIn(ExperimentalMaterialApi::class)
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun GenerateDescriptionScreen(
     onClose: () -> Unit
 ) {
-    // Use rememberSaveable so that state persists correctly even when other fields change
-    var selectedImageUri by rememberSaveable { mutableStateOf<Uri?>(null) }
-    var imageDescription by rememberSaveable { mutableStateOf("") }
-    var generatedCaption by rememberSaveable { mutableStateOf("") }
-    var isLoading by rememberSaveable { mutableStateOf(false) }
+    val ctx   = LocalContext.current
+    val scope = rememberCoroutineScope()
 
-    // Dropdown states
-    var selectedPlatform by rememberSaveable { mutableStateOf("Instagram") }
-    var expandedPlatform by remember { mutableStateOf(false) }
-    val platformOptions = listOf("Instagram", "LinkedIn", "Facebook")
+    /* ───── state ─────────────────────────────────────────────── */
+    var imageUri       by rememberSaveable { mutableStateOf<Uri?>(null) }
+    var expandedImage  by remember { mutableStateOf<Uri?>(null) }
+    var contextText    by rememberSaveable { mutableStateOf("") }
+    var caption        by rememberSaveable { mutableStateOf("") }
+    var loading        by rememberSaveable { mutableStateOf(false) }
 
-    var selectedTarget by rememberSaveable { mutableStateOf("Casual users & lifestyle followers") }
-    var expandedTarget by remember { mutableStateOf(false) }
-    val targetOptions = listOf(
+    /* — platform / audience chips — */
+    var platform       by rememberSaveable { mutableStateOf("Instagram") }
+    val platforms        = listOf("Instagram", "LinkedIn", "Facebook")
+
+    var audienceText   by rememberSaveable { mutableStateOf("") }
+    val audiences        = listOf(
         "Casual users & lifestyle followers",
         "Influencers & content creators",
-        "Gen Z & Millennials",
+        "Gen Z & Millennials",
         "Photography & art lovers",
         "Brand & business marketing",
-        "Corporate professionals",
-        "Entrepreneurs & startup founders",
-        "Tech enthusiasts & engineers",
-        "Recruiters & job seekers",
-        "Thought leaders & business executives",
-        "Family & community-focused users",
-        "Boomers & Gen X",
-        "Hobbyists & interest groups"
+        "Corporate professionals"
     )
 
-    var selectedHashtags by rememberSaveable { mutableStateOf("No") }
-    var expandedHashtags by remember { mutableStateOf(false) }
-    val hashtagsOptions = listOf("Yes", "No")
+    var includeTags    by rememberSaveable { mutableStateOf(false) }
 
-    // ActivityResultLauncher for picking images
-    val pickImageLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        if (uri != null) {
-            selectedImageUri = uri
+    /* — image picker — */
+    val pickImage = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri -> imageUri = uri }
+
+    /* ───── animated gradient title (same values as StyleTransfer) ───── */
+    val fullTitle = "Generate a Description"
+    var title     by remember { mutableStateOf("") }
+    LaunchedEffect(Unit) {
+        fullTitle.forEachIndexed { i, _ ->
+            title = fullTitle.substring(0, i + 1)
+            delay(35)
         }
     }
-    val scrollState = rememberScrollState()
-    val captionScrollState = rememberScrollState()
-    val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
 
-    Column(
-        modifier = Modifier
+    val gradientStyle = MaterialTheme.typography.headlineMedium.copy(
+        brush         = Brush.horizontalGradient(
+            listOf(
+                MaterialTheme.colorScheme.primary,
+                MaterialTheme.colorScheme.tertiary
+            )
+        ),
+        fontWeight    = FontWeight.ExtraBold,
+        letterSpacing = 1.5.sp
+    )
+
+    /* ───── scaffolding identical to StyleTransferScreen ───── */
+    val bg             = Brush.verticalGradient(
+        listOf(
+            MaterialTheme.colorScheme.secondaryContainer.copy(.25f),
+            MaterialTheme.colorScheme.surface
+        )
+    )
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+
+    Box(
+        Modifier
             .fillMaxWidth()
             .fillMaxHeight()
-            .verticalScroll(scrollState)
-            .padding(16.dp)
     ) {
-        // Close button
-        Box(modifier = Modifier.fillMaxWidth()) {
-            Text(
-                text = "X",
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .clickable { onClose() }
-                    .padding(8.dp),
-                fontSize = 24.sp
-            )
-        }
 
-        // Title
-        Text(
-            text = "Generate a Description",
-            style = MaterialTheme.typography.headlineSmall
+        /* 🎨 bottom‑anchored, side‑to‑side waves */
+        BottomWaveGradient(
+            modifier = Modifier.matchParentSize(),
+            bandHeight = 100.dp,              // ← your requested params
+            fadeHeight = 100.dp,
+            waveAmp = 24.dp,
+            waveLen = 600.dp
         )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Button to pick an image
-        Button(
-            onClick = { pickImageLauncher.launch("image/*") },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Pick Image from Gallery")
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Show selected image or a message if none selected
-        if (selectedImageUri == null) {
-            Text("No image selected.")
-        } else {
-            Image(
-                painter = rememberAsyncImagePainter(selectedImageUri),
-                contentDescription = null,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(400.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .border(1.dp, Color.Gray, RoundedCornerShape(8.dp)),
-                contentScale = ContentScale.Crop
-            )
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-
-
-        // Platform dropdown
-        Text("Select platform:")
-        ExposedDropdownMenuBox(
-            expanded = expandedPlatform,
-            onExpandedChange = { expandedPlatform = !expandedPlatform },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            TextField(
-                readOnly = true,
-                value = selectedPlatform,
-                onValueChange = {},
-                label = { Text("Platform") },
-                trailingIcon = {
-                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedPlatform)
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .menuAnchor()
-            )
-            ExposedDropdownMenu(
-                expanded = expandedPlatform,
-                onDismissRequest = { expandedPlatform = false }
-            ) {
-                platformOptions.forEach { option ->
-                    DropdownMenuItem(
-                        onClick = {
-                            selectedPlatform = option
-                            expandedPlatform = false
-                        },
-                        text = { Text(text = option) }
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Target audience dropdown
-        Text("Select target audience:")
-        ExposedDropdownMenuBox(
-            expanded = expandedTarget,
-            onExpandedChange = { expandedTarget = !expandedTarget },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            TextField(
-                readOnly = true,
-                value = selectedTarget,
-                onValueChange = {},
-                label = { Text("Target Audience") },
-                trailingIcon = {
-                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedTarget)
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .menuAnchor()
-            )
-            ExposedDropdownMenu(
-                expanded = expandedTarget,
-                onDismissRequest = { expandedTarget = false }
-
-            ) {
-                targetOptions.forEach { option ->
-                    DropdownMenuItem(
-                        onClick = {
-                            selectedTarget = option
-                            expandedTarget = false
-                        },
-                        text = { Text(text = option) }
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Hashtags dropdown
-        Text("Include Hashtags?")
-        ExposedDropdownMenuBox(
-            expanded = expandedHashtags,
-            onExpandedChange = { expandedHashtags = !expandedHashtags },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            TextField(
-                readOnly = true,
-                value = selectedHashtags,
-                onValueChange = {},
-                label = { Text("Hashtags") },
-                trailingIcon = {
-                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedHashtags)
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .menuAnchor()
-            )
-            ExposedDropdownMenu(
-                expanded = expandedHashtags,
-                onDismissRequest = { expandedHashtags = false }
-            ) {
-                hashtagsOptions.forEach { option ->
-                    DropdownMenuItem(
-                        onClick = {
-                            selectedHashtags = option
-                            expandedHashtags = false
-                        },
-                        text = { Text(text = option) }
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Optional image description field
-        Text("Provide context (optional):")
-        TextField(
-            value = imageDescription,
-            onValueChange = { imageDescription = it },
+        Scaffold(
             modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 56.dp, max = 100.dp)
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Generate button
-        Button(
-            onClick = {
-                if (selectedImageUri != null) {
-                    coroutineScope.launch {
-                        isLoading = true
-                        generatedCaption = fetchGeneratedCaption(
-                            context = context,
-                            imageUri = selectedImageUri!!,
-                            platform = selectedPlatform,
-                            target = selectedTarget,
-                            hashtags = selectedHashtags,
-                            imgDescription = imageDescription
-                        )
-                        isLoading = false
-                    }
-                } else {
-                    // Optionally show a message if no image is selected
-                }
+                .fillMaxSize()
+                //.background(bg)
+                .nestedScroll(scrollBehavior.nestedScrollConnection),
+            containerColor = Color.Transparent,
+            topBar = {
+                LargeTopAppBar(
+                    title = { Text(title, style = gradientStyle) },
+                    navigationIcon = {
+                        IconButton(onClick = onClose) {
+                            Icon(
+                                Icons.Default.Close,
+                                null
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.largeTopAppBarColors(containerColor = Color.Transparent),
+                    scrollBehavior = scrollBehavior
+                )
             },
-            modifier = Modifier.fillMaxWidth(),
-            enabled = !isLoading
-        ) {
-            Text("Generate")
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Loading indicator
-        if (isLoading) {
-            Box(
-                modifier = Modifier.fillMaxWidth(),
-                contentAlignment = Alignment.Center
-            ) {
-                CircularProgressIndicator()
+            floatingActionButton = {
+                AnimatedVisibility(
+                    visible = imageUri != null && !loading,
+                    enter = scaleIn() + fadeIn(),
+                    exit = scaleOut() + fadeOut(),
+                ) {
+                    ExtendedFloatingActionButton(
+                        icon = {
+                            if (loading)
+                                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                            else
+                                Icon(Icons.Default.PlayArrow, null)
+                        },
+                        text = { Text("Generate") },
+                        onClick = {
+                            scope.launch {
+                                loading = true; caption = ""
+                                caption = fetchGeneratedCaption(
+                                    context = ctx,
+                                    imageUri = imageUri!!,
+                                    platform = platform,
+                                    target = audienceText.ifBlank { "General" },
+                                    hashtags = if (includeTags) "Yes" else "No",
+                                    imgDescription = contextText
+                                )
+                                loading = false
+                            }
+                        }
+                    )
+                }
             }
-            Spacer(modifier = Modifier.height(16.dp))
-        }
+        ) { innerPadding ->
 
-        // Display the generated caption if available
-        if (generatedCaption.isNotEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 500.dp)
-                    .border(1.dp, Color.Gray, RoundedCornerShape(8.dp))
-                    .padding(8.dp)
-                    .verticalScroll(captionScrollState)
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 24.dp),
+                horizontalAlignment = Alignment.Start
             ) {
-                Text(text = generatedCaption, fontSize = 18.sp)
+                Spacer(Modifier.height(16.dp))
+
+                /* ───── image picker CARD (click‑to‑zoom) ───── */
+                SelectionCard(label = "Pick image", uri = imageUri) {
+                    if (imageUri == null) pickImage.launch("image/*")
+                    else expandedImage = imageUri
+                }
+
+                Spacer(Modifier.height(20.dp))
+
+                /* ───── rest of the original UI (platform, audience …) ───── */
+                Text("Platform", style = MaterialTheme.typography.labelMedium)
+                Row(Modifier.padding(top = 4.dp)) {
+                    platforms.forEach { p ->
+                        FilterChip(
+                            selected = platform == p,
+                            onClick = { platform = p },
+                            label = { Text(p) },
+                            leadingIcon = if (platform == p) {
+                                { Icon(Icons.Default.Check, null) }
+                            } else null,
+                            modifier = Modifier.padding(end = 8.dp)
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
+                Text("Target audience", style = MaterialTheme.typography.labelMedium)
+                OutlinedTextField(
+                    value = audienceText,
+                    onValueChange = { audienceText = it },
+                    placeholder = { Text("Describe your audience…") },
+                    leadingIcon = { Icon(Icons.Default.Person, null) },
+                    shape = MaterialTheme.shapes.medium,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(Modifier.horizontalScroll(rememberScrollState())) {
+                    audiences.forEach { suggestion ->
+                        AssistChip(
+                            onClick = { audienceText = suggestion },
+                            label = { Text(suggestion, maxLines = 1) },
+                            modifier = Modifier.padding(end = 8.dp)
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = includeTags,
+                        onCheckedChange = { includeTags = it }
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Icon(                 // 🏷️ or #   (use whichever icon set you have)
+                        imageVector = Icons.Outlined.Tag,   // requires `import androidx.compose.material.icons.outlined.Tag`
+                        contentDescription = null
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text("Include hashtags")
+                }
+
+                Spacer(Modifier.height(12.dp))
+                Text("Provide context (optional):")
+                OutlinedTextField(
+                    value = contextText,
+                    onValueChange = { contextText = it },
+                    shape = MaterialTheme.shapes.medium,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(56.dp, 100.dp)
+                )
+
+                Spacer(Modifier.height(120.dp)) // keep content clear of the FAB
+            }
+
+            /* ───── same loader & zoom dialog you already have ───── */
+            if (loading) SweepLoader()
+
+            if (expandedImage != null) {
+                Dialog(onDismissRequest = { expandedImage = null }) {
+                    ZoomableImage(expandedImage!!)
+                }
+            }
+
+            /* ───── the caption‑card logic from your original screen ───── */
+            caption.takeIf { it.isNotBlank() }?.let { generated ->
+                RephrasedTextCard(
+                    text = generated,
+                    title = "Generated caption",
+                    onDismiss = { caption = "" }
+                )
             }
         }
     }
 }
+
 
 @OptIn(ExperimentalMaterialApi::class)
 @Composable
@@ -1202,162 +1610,246 @@ fun GenerateHashtagsScreen(onClose: () -> Unit) {
     }
 }
 
+
+/*
+enum class Tool(val label: String, val icon: ImageVector) {
+    Brush("Brush", Icons.Filled.Brush),
+    Eraser("Erase", Icons.Filled.CleaningServices)
+}
+
+@Composable
+private fun ToolSelector(
+    selected: Tool,
+    onSelect: (Tool) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    SingleChoiceSegmentedButtonRow(modifier = modifier.fillMaxWidth()) {
+        Tool.entries.forEachIndexed { index, tool ->
+            SegmentedButton(
+                shape     = SegmentedButtonDefaults.itemShape(index, Tool.entries.size),
+                selected  = selected == tool,
+                onClick   = { onSelect(tool) },
+                icon      = { Icon(tool.icon, contentDescription = tool.label) },
+                label     = { Text(tool.label) }
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PromptField(
+    text: String,
+    onTextChange: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    TextField(
+        value = text,
+        onValueChange = onTextChange,
+        label = { Text("Describe the image") },
+        trailingIcon = {
+            if (text.isNotBlank()) {
+                IconButton(onClick = { onTextChange("") }) {
+                    Icon(Icons.Filled.Close, contentDescription = "Clear")
+                }
+            }
+        },
+        singleLine = true,
+        shape = RoundedCornerShape(28),
+
+        // ⬇️  new API name + new color‑slot names
+        colors = TextFieldDefaults.colors(
+            focusedContainerColor   = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .40f),
+            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .40f),
+            disabledContainerColor  = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .20f),
+
+            focusedIndicatorColor   = Color.Transparent,
+            unfocusedIndicatorColor = Color.Transparent,
+            disabledIndicatorColor  = Color.Transparent
+        ),
+
+        modifier = modifier.fillMaxWidth()
+    )
+}
+
+
+
 @Composable
 fun SketchScreen(
-    onClose: () -> Unit
+    onClose: () -> Unit,
+    onImageReady: () -> Unit         // navigate to Edit screen
 ) {
-    val context = LocalContext.current
-    // The user's current sketch or returned image
-    var sketchBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    val ctx   = LocalContext.current
+    val scope = rememberCoroutineScope()
 
-    // If the user hasn't drawn yet, initialize a blank bitmap.
-    // We need real width/height in pixels. For simplicity, pick a fixed size or
-    // wait for layout measurement. Below is a simple approach with a "remember" sized 512x512:
+    /* ─── State ─────────────────────────────────────────────────────────── */
+    var sketchBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var brushMode    by remember { mutableStateOf(true) }    // true = pencil
+    var promptText   by remember { mutableStateOf("") }
+    var loading      by remember { mutableStateOf(false) }
+    var error        by remember { mutableStateOf<String?>(null) }
+    var hasSketch   by remember { mutableStateOf(false) }   // ⇦ set to true on first stroke
+
+    // convenience flag for FAB
+    val canGenerate = hasSketch && promptText.isNotBlank() && !loading
+
     if (sketchBitmap == null) {
         sketchBitmap = Bitmap.createBitmap(512, 700, Bitmap.Config.ARGB_8888).apply {
-            eraseColor(Color.White.toArgb()) // blank white background
+            eraseColor(android.graphics.Color.WHITE)
         }
     }
 
-    var brushMode by remember { mutableStateOf(true) } // pencil (true) or eraser (false)
-    var promptText by remember { mutableStateOf("") }
-    var isLoading by remember { mutableStateOf(false) }
-    val coroutineScope = rememberCoroutineScope()
+    /* ─── Header type‑writer with gradient ─────────────────────────────── */
+    val fullTitle = "Sketch to Image"
+    var typedTitle by remember { mutableStateOf("") }
+    LaunchedEffect(Unit) {
+        fullTitle.forEachIndexed { i, _ ->
+            typedTitle = fullTitle.substring(0, i + 1); delay(35)
+        }
+    }
+    val gradientStyle = MaterialTheme.typography.headlineMedium.copy(
+        brush = Brush.horizontalGradient(
+            listOf(
+                MaterialTheme.colorScheme.primary,
+                MaterialTheme.colorScheme.tertiary
+            )
+        ),
+        fontWeight = FontWeight.ExtraBold,
+        letterSpacing = 1.5.sp
+    )
+
+    /* ─── Background tint ──────────────────────────────────────────────── */
+    val bg = Brush.linearGradient(
+        0f to MaterialTheme.colorScheme.primary.copy(.25f),
+        .5f to MaterialTheme.colorScheme.secondaryContainer.copy(.12f),
+        1f to MaterialTheme.colorScheme.background
+    )
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     Box(
-        modifier = Modifier
-            .fillMaxHeight(1f)
+        Modifier
             .fillMaxWidth()
-            .padding(16.dp)
+            .fillMaxHeight()
     ) {
-        // Close "X" in top-right corner
-        Box(modifier = Modifier.fillMaxWidth()) {
-            Text(
-                text = "X",
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .clickable { onClose() }
-                    .padding(8.dp),
-                fontSize = 24.sp
-            )
-        }
 
-        // The column with canvas, brushes, prompt, and apply
-        Column(
+        /* 🎨 bottom‑anchored, side‑to‑side waves */
+        BottomWaveGradient(
+            modifier = Modifier.matchParentSize(),
+            bandHeight = 100.dp,              // ← your requested params
+            fadeHeight = 100.dp,
+            waveAmp = 24.dp,
+            waveLen = 600.dp
+        )
+        Scaffold(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = 40.dp), // leave space for "X"
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text("Sketch an Image", style = MaterialTheme.typography.headlineSmall)
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // The Canvas area
-            if (sketchBitmap != null) {
-                DrawCanvas(
-                    bitmap = sketchBitmap!!,
-                    brushMode = brushMode
+                //.background(bg)
+                .nestedScroll(scrollBehavior.nestedScrollConnection),
+            containerColor = Color.Transparent,
+            topBar = {
+                LargeTopAppBar(
+                    title = { Text(typedTitle, style = gradientStyle) },
+                    navigationIcon = {
+                        IconButton(onClick = onClose) { Icon(Icons.Default.Close, null) }
+                    },
+                    colors = TopAppBarDefaults.largeTopAppBarColors(
+                        containerColor = Color.Transparent
+                    ),
+                    scrollBehavior = scrollBehavior
                 )
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Buttons for pencil / eraser
-            Row {
-                Button(
-                    onClick = { brushMode = true },
-                    colors = if (brushMode)
-                        ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                    else
-                        ButtonDefaults.buttonColors()
+            },
+            /* ─── Floating Generate FAB  ───────────────────────────────── */
+            floatingActionButton = {
+                AnimatedVisibility(
+                    visible = canGenerate,                 // only when sketch + prompt
+                    enter = slideInVertically { it } + fadeIn(),
+                    exit = slideOutVertically { it } + fadeOut()
                 ) {
-                    Text("Pencil")
-                }
-                Spacer(modifier = Modifier.width(8.dp))
-                Button(
-                    onClick = { brushMode = false },
-                    colors = if (!brushMode)
-                        ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                    else
-                        ButtonDefaults.buttonColors()
-                ) {
-                    Text("Eraser")
-                }
-
-                Button(
-                    onClick = {
-                        sketchBitmap?.let { bmp ->
-                            val success = saveImageToGallery(context, bmp)
-                            Toast
-                                .makeText(
-                                    context,
-                                    if (success) "Saved to gallery" else "Failed to save",
-                                    Toast.LENGTH_SHORT
+                    ExtendedFloatingActionButton(
+                        icon = {
+                            if (loading)
+                                CircularProgressIndicator(
+                                    strokeWidth = 2.dp,
+                                    modifier = Modifier.size(18.dp)
                                 )
-                                .show()
-                        }
-                    }
-                ) {
-                    Text("Save to Gallery")
+                            else
+                                Icon(Icons.Default.PlayArrow, null)
+                        },
+                        text = { Text(if (loading) "Generating…" else "Generate") },
+                        onClick = {
+                            scope.launch {
+                                if (sketchBitmap == null) return@launch
+                                loading = true; error = null
+                                val result = fetchSketchToImage(sketchBitmap!!, promptText)
+                                loading = false
+                                if (result != null) {
+                                    ImageHolder.generatedImage = result
+                                    onImageReady()
+                                } else {
+                                    error = "Failed to generate image"
+                                }
+                            }
+                        },
+                        shape = RoundedCornerShape(50),
+                        modifier = Modifier.padding(bottom = 32.dp)
+                    )
                 }
             }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Prompt text field
-            TextField(
-                value = promptText,
-                onValueChange = { promptText = it },
-                label = { Text("Prompt") },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // "Apply" button
-            Button(
-                onClick = {
-                    coroutineScope.launch {
-                        if (sketchBitmap == null) return@launch
-                        isLoading = true
-
-                        // Send the user's sketch + prompt to your backend
-                        val resultImage = fetchSketchToImage(sketchBitmap!!, promptText)
-
-                        isLoading = false
-                        resultImage?.let {
-                            // Replace the local canvas with the returned image
-                            sketchBitmap = it
-                        }
-                    }
-                },
-                modifier = Modifier.fillMaxWidth(.7f),
-                enabled = !isLoading
+        ) { inner ->
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .padding(inner)
+                    .padding(horizontal = 20.dp)
+                    .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text("Apply")
+                Spacer(Modifier.height(16.dp))
+
+                /* ─── Canvas ──────────────────────────────────────────────── */
+                sketchBitmap?.let { bmp ->
+                    DrawCanvas(bitmap = bmp, brushMode = brushMode, onStroke = { hasSketch = true })
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                /* ─── Tools row ──────────────────────────────────────────── */
+                /* ─── NEW tool picker ────────────────────────────────────── */
+                ToolSelector(
+                    selected = if (brushMode) Tool.Brush else Tool.Eraser,
+                    onSelect = { tool -> brushMode = (tool == Tool.Brush) }
+                )
+
+                Spacer(Modifier.height(16.dp))
+
+                /* ─── NEW prompt field ───────────────────────────────────── */
+                PromptField(
+                    text = promptText,
+                    onTextChange = { promptText = it }
+                )
+
+                Spacer(Modifier.height(24.dp))
+                error?.let {
+                    Spacer(Modifier.height(12.dp))
+                    Text(it, color = MaterialTheme.colorScheme.error)
+                }
+
             }
 
-            if (isLoading) {
-                Spacer(modifier = Modifier.height(16.dp))
-                CircularProgressIndicator()
-            }
+            if (loading) SweepLoader()
         }
     }
 }
 
 
-/**
- * A simple composable that draws [bitmap] on a Canvas,
- * allowing the user to draw or erase with gestures.
- */
+
+/* ─────────────────────────────────────────────────────────────────────────── */
 @Composable
 fun DrawCanvas(
     bitmap: Bitmap,
-    brushMode: Boolean
+    brushMode: Boolean,
+    onStroke: () -> Unit
 ) {
-    // For simplicity, we'll define a fixed brush size
     val brushSizePx = 12f
     val paintBrush = remember {
         Paint().apply {
@@ -1373,88 +1865,432 @@ fun DrawCanvas(
             style = Paint.Style.STROKE
             strokeWidth = brushSizePx
             strokeCap = Paint.Cap.ROUND
-            //xfermode = PorterDuffXfermode(PorterDuff.Mode.CLEAR)
         }
     }
-    // This counter forces a re-render each time we draw on the bitmap
     var drawCounter by remember { mutableStateOf(0) }
-    fun invalidateCanvas() { drawCounter++ }
+    fun invalidate() { drawCounter++ }
 
     var lastPoint by remember { mutableStateOf<Offset?>(null) }
     val density = LocalDensity.current.density
-
-    // We'll pick a size that matches the underlying bitmap aspect ratio
-    val aspectRatio = bitmap.width.toFloat() / bitmap.height.toFloat()
+    val aspect = bitmap.width.toFloat() / bitmap.height
 
     Box(
-        modifier = Modifier
+        Modifier
             .fillMaxWidth()
-            .aspectRatio(aspectRatio)
+            .aspectRatio(aspect)
             .border(1.dp, Color.Gray)
             .pointerInput(brushMode) {
                 detectDragGestures(
                     onDragStart = { offset ->
                         lastPoint = offset
-                        // Draw a small circle at the start if wanted
                         val canvas = Canvas(bitmap)
-                        val containerSize = Size(this.size.width.toFloat(), this.size.height.toFloat())
-                        val (x, y) = offset.toPixelCoords(containerSize, bitmap, density)
+                        val container = Size(size.width.toFloat(), size.height.toFloat())
+                        val (x, y) = offset.toPixel(container, bitmap, density)
                         canvas.drawCircle(
-                            x,
-                            y,
-                            brushSizePx / 2,
+                            x, y, brushSizePx / 2,
                             if (brushMode) paintBrush else paintEraser
                         )
                     },
                     onDrag = { change, _ ->
                         val current = change.position
                         val canvas = Canvas(bitmap)
-                        val containerSize = Size(this.size.width.toFloat(), this.size.height.toFloat())
+                        val container = Size(size.width.toFloat(), size.height.toFloat())
                         lastPoint?.let { lp ->
-                            val (startX, startY) = lp.toPixelCoords(containerSize, bitmap, density)
-                            val (endX, endY) = current.toPixelCoords(containerSize, bitmap, density)
+                            val (sx, sy) = lp.toPixel(container, bitmap, density)
+                            val (ex, ey) = current.toPixel(container, bitmap, density)
                             canvas.drawLine(
-                                startX, startY,
-                                endX, endY,
+                                sx, sy, ex, ey,
                                 if (brushMode) paintBrush else paintEraser
                             )
-                            // Force recompose so we see the updated bitmap
-                            invalidateCanvas()
+                            invalidate()
+                            onStroke()
                         }
                         lastPoint = current
                     },
-                    onDragEnd = {
-                        lastPoint = null
+                    onDragEnd = { lastPoint = null }
+                )
+            }
+    ) {
+        drawCounter
+        Image(bitmap.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize())
+    }
+}
+*/
+
+
+
+
+
+
+/* coord helper */
+
+/*
+private fun Offset.toPixel(
+    container: Size, bmp: Bitmap, density: Float
+): Pair<Float, Float> {
+    val sx = bmp.width / container.width
+    val sy = bmp.height / container.height
+    return x * sx to y * sy
+}
+*/
+
+private fun Offset.toPxInBitmap(
+    containerSize: IntSize,   // <-- now IntSize
+    bmp: Bitmap,
+    density: Float
+): Pair<Float, Float> {
+    val sx = bmp.width  / containerSize.width.toFloat()
+    val sy = bmp.height / containerSize.height.toFloat()
+    return x * sx to y * sy
+}
+/* ─── Canvas with variable brush / eraser size ─────────────────────── */
+@Composable
+fun DrawCanvas(
+    bitmap: Bitmap,
+    brushMode: Boolean,
+    brushSizeDp: Float,
+    onStroke: () -> Unit
+) {
+    val density  = LocalDensity.current.density
+
+    /* two android.graphics.Paint instances reused on every draw */
+    val brushPaint  = remember {
+        Paint().apply {
+            color       = android.graphics.Color.BLACK
+            style       = Paint.Style.STROKE
+            strokeCap   = Paint.Cap.ROUND
+            isAntiAlias = true
+        }
+    }
+    val eraserPaint = remember {
+        Paint().apply {
+            color       = android.graphics.Color.WHITE
+            style       = Paint.Style.STROKE
+            strokeCap   = Paint.Cap.ROUND
+            //xfermode    = PorterDuffXfermode(PorterDuff.Mode.CLEAR)
+            isAntiAlias = true
+        }
+    }
+
+    var prev by remember { mutableStateOf<Offset?>(null) }
+
+    ComposeCanvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(bitmap.width / bitmap.height.toFloat())
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant)
+            .pointerInput(brushMode, brushSizeDp) {
+                detectDragGestures(
+                    onDragStart = { start ->
+                        val canvas   = android.graphics.Canvas(bitmap)
+                        val (x, y)   = start.toPxInBitmap(size, bitmap, density)
+                        val strokePx = brushSizeDp * density
+
+                        (if (brushMode) brushPaint else eraserPaint).also {
+                            it.strokeWidth = strokePx
+                            canvas.drawCircle(x, y, strokePx / 2, it)
+                        }
+                        prev = start
+                        onStroke()
+                    },
+                    onDragEnd    = { prev = null },
+                    onDragCancel = { prev = null },
+                    onDrag       = { change, _ ->
+                        val cur = change.position
+                        prev?.let { p0 ->
+                            val canvas   = android.graphics.Canvas(bitmap)
+                            val strokePx = brushSizeDp * density
+                            val (x0, y0) = p0.toPxInBitmap(size, bitmap, density)
+                            val (x1, y1) = cur.toPxInBitmap(size, bitmap, density)
+
+                            (if (brushMode) brushPaint else eraserPaint).also {
+                                it.strokeWidth = strokePx
+                                canvas.drawLine(x0, y0, x1, y1, it)
+                            }
+                            prev = cur
+                            onStroke()
+                        }
                     }
                 )
             }
     ) {
-        val dummy = drawCounter
-        // Show the updated bitmap
-        Image(
-            bitmap = bitmap.asImageBitmap(),
-            contentDescription = "Sketch Canvas",
-            modifier = Modifier.fillMaxSize()
+        /*  <-- we’re now inside the DrawScope, so we can call the
+                DrawScope-level extension of drawImage directly.       */
+        drawImage(
+            image   = bitmap.asImageBitmap(),
+            dstSize = IntSize(size.width.toInt(), size.height.toInt()) // Scale to canvas
         )
     }
 }
 
-/**
- * Helper function to convert gesture coordinates (within the Composable)
- * into the corresponding pixel coordinates in the [bitmap].
- */
-fun Offset.toPixelCoords(
-    containerSize: Size,
-    bitmap: Bitmap,
-    density: Float
-): Pair<Float, Float> {
-    // containerSize is the Composable's size in px (not dp).
-    val scaleX = bitmap.width / containerSize.width
-    val scaleY = bitmap.height / containerSize.height
-    val x = this.x * scaleX
-    val y = this.y * scaleY
-    return x to y
+/* ────────────────────────────────────────────────────────────────────── */
+/* UI elements reused from your original file                            */
+/* -------------------------------------------------------------------- */
+
+@Composable
+private fun PromptField(
+    text: String,
+    onTextChange: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    TextField(
+        value = text,
+        onValueChange = onTextChange,
+        label = { Text("Describe the image") },
+        trailingIcon = {
+            if (text.isNotBlank()) {
+                IconButton(onClick = { onTextChange("") }) {
+                    Icon(Icons.Filled.Close, contentDescription = "Clear")
+                }
+            }
+        },
+        singleLine = true,
+        shape = RoundedCornerShape(28),
+        colors = TextFieldDefaults.colors(
+            focusedContainerColor   = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .40f),
+            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .40f),
+            disabledContainerColor  = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .20f),
+            focusedIndicatorColor   = Color.Transparent,
+            unfocusedIndicatorColor = Color.Transparent,
+            disabledIndicatorColor  = Color.Transparent
+        ),
+        modifier = modifier.fillMaxWidth()
+    )
 }
+
+/* ────────────────────────────────────────────────────────────────────── */
+/*                >>>  Sketch to Image Screen  <<<                       */
+/* -------------------------------------------------------------------- */
+
+@Composable
+fun SketchScreen(
+    onClose: () -> Unit,
+    onImageReady: () -> Unit         // navigate to Edit screen
+) {
+    val ctx   = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    /* ─── State ─────────────────────────────────────────────────────── */
+    var sketchBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var brushMode    by remember { mutableStateOf(true) }  // true = pencil
+    var brushSizeDp  by remember { mutableStateOf(8f) }
+    var promptText   by remember { mutableStateOf("") }
+    var loading      by remember { mutableStateOf(false) }
+    var error        by remember { mutableStateOf<String?>(null) }
+    var hasSketch    by remember { mutableStateOf(false) } // ⇦ set true on first stroke
+
+    // convenience flag for FAB
+    val canGenerate = hasSketch && promptText.isNotBlank() && !loading
+
+    if (sketchBitmap == null) {
+        sketchBitmap = Bitmap.createBitmap(512, 700, Bitmap.Config.ARGB_8888).apply {
+            eraseColor(android.graphics.Color.WHITE)
+        }
+    }
+
+    /* ─── Header type-writer with gradient ─────────────────────────── */
+    val fullTitle = "Sketch to Image"
+    var typedTitle by remember { mutableStateOf("") }
+    LaunchedEffect(Unit) {
+        fullTitle.forEachIndexed { i, _ ->
+            typedTitle = fullTitle.substring(0, i + 1)
+            delay(35)
+        }
+    }
+    val gradientStyle = MaterialTheme.typography.headlineMedium.copy(
+        brush = Brush.horizontalGradient(
+            listOf(
+                MaterialTheme.colorScheme.primary,
+                MaterialTheme.colorScheme.tertiary
+            )
+        ),
+        fontWeight = FontWeight.ExtraBold,
+        letterSpacing = 1.5.sp
+    )
+
+    /* ─── Background tint ──────────────────────────────────────────── */
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .fillMaxHeight()
+    ) {
+        /* 🎨 backdrop wave (keep your implementation if present) */
+        BottomWaveGradient(
+            modifier = Modifier.matchParentSize(),
+            bandHeight = 100.dp,
+            fadeHeight = 100.dp,
+            waveAmp = 24.dp,
+            waveLen = 600.dp
+        )
+
+        Scaffold(
+            modifier = Modifier
+                .fillMaxSize()
+                .nestedScroll(scrollBehavior.nestedScrollConnection),
+            containerColor = Color.Transparent,
+            topBar = {
+                LargeTopAppBar(
+                    title = { Text(typedTitle, style = gradientStyle) },
+                    navigationIcon = {
+                        IconButton(onClick = onClose) { Icon(Icons.Default.Close, null) }
+                    },
+                    colors = TopAppBarDefaults.largeTopAppBarColors(
+                        containerColor = Color.Transparent
+                    ),
+                    scrollBehavior = scrollBehavior
+                )
+            },
+            /* ─── Floating Generate FAB  ─────────────────────────── */
+            floatingActionButton = {
+                AnimatedVisibility(
+                    visible = canGenerate,
+                    enter = slideInVertically { it } + fadeIn(),
+                    exit = slideOutVertically { it } + fadeOut()
+                ) {
+                    ExtendedFloatingActionButton(
+                        icon = {
+                            if (loading)
+                                CircularProgressIndicator(
+                                    strokeWidth = 2.dp,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            else
+                                Icon(Icons.Default.PlayArrow, null)
+                        },
+                        text = { Text(if (loading) "Generating…" else "Generate") },
+                        onClick = {
+                            scope.launch {
+                                if (sketchBitmap == null) return@launch
+                                loading = true; error = null
+                                val result = fetchSketchToImage(sketchBitmap!!, promptText)
+                                loading = false
+                                if (result != null) {
+                                    ImageHolder.generatedImage = result
+                                    onImageReady()
+                                } else {
+                                    error = "Failed to generate image"
+                                }
+                            }
+                        },
+                        shape = RoundedCornerShape(50),
+                        modifier = Modifier.padding(bottom = 32.dp)
+                    )
+                }
+            }
+        ) { inner ->
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .padding(inner)
+                    .padding(horizontal = 20.dp)
+                    .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Spacer(Modifier.height(16.dp))
+
+                /* ─── Canvas ──────────────────────────────────────────── */
+                sketchBitmap?.let { bmp ->
+                    DrawCanvas(
+                        bitmap       = bmp,
+                        brushMode    = brushMode,
+                        brushSizeDp  = brushSizeDp,
+                        onStroke     = { hasSketch = true }
+                    )
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                /* ─── Brush / Erase controls (chips + slider) ─────────── */
+                BrushSizeBar(
+                    brushMode    = brushMode,
+                    onModeChange = { brushMode = it },
+                    brushSizeDp  = brushSizeDp,
+                    onSizeChange = { brushSizeDp = it }
+                )
+
+                Spacer(Modifier.height(16.dp))
+
+                /* ─── Prompt field ────────────────────────────────────── */
+                PromptField(
+                    text = promptText,
+                    onTextChange = { promptText = it }
+                )
+
+                Spacer(Modifier.height(24.dp))
+                error?.let {
+                    Spacer(Modifier.height(12.dp))
+                    Text(it, color = MaterialTheme.colorScheme.error)
+                }
+            }
+
+            if (loading) SweepLoader()
+        }
+    }
+}
+
+/* ────────────────────────────────────────────────────────────────────── */
+/*            Brush / Eraser chips + size slider (reusable)              */
+/* -------------------------------------------------------------------- */
+
+@Composable
+private fun BrushSizeBar(
+    brushMode: Boolean,
+    onModeChange: (Boolean) -> Unit,
+    brushSizeDp: Float,
+    onSizeChange: (Float) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val neutral     = MaterialTheme.colorScheme.onSurfaceVariant
+    val greyChip    = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .9f)
+    val controlTint = neutral
+
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconToggleButton(
+            checked = brushMode,
+            onCheckedChange = { if (!brushMode) onModeChange(true) },
+            colors = IconButtonDefaults.iconToggleButtonColors(
+                contentColor          = neutral,
+                containerColor        = Color.Transparent,
+                checkedContainerColor = greyChip,
+                checkedContentColor   = neutral
+            )
+        ) { Icon(Icons.Default.Brush, null) }
+
+        Spacer(Modifier.width(8.dp))
+
+        IconToggleButton(
+            checked = !brushMode,
+            onCheckedChange = { if (brushMode) onModeChange(false) },
+            colors = IconButtonDefaults.iconToggleButtonColors(
+                contentColor          = neutral,
+                containerColor        = Color.Transparent,
+                checkedContainerColor = greyChip,
+                checkedContentColor   = neutral
+            )
+        ) { Icon(Icons.Default.CleaningServices, null) }
+
+        Spacer(Modifier.width(16.dp))
+
+        Slider(
+            value = brushSizeDp,
+            onValueChange = onSizeChange,
+            valueRange = 2f..16f,
+            steps = 6,
+            colors = SliderDefaults.colors(
+                activeTrackColor   = controlTint,
+                inactiveTrackColor = controlTint.copy(alpha = 0.3f),
+                thumbColor         = controlTint
+            ),
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
 
 suspend fun fetchSketchToImage(sketch: Bitmap, prompt: String): Bitmap? = withContext(Dispatchers.IO) {
     try {
@@ -1626,5 +2462,335 @@ suspend fun fetchGeneratedHashtagsFromImage(
         }
     } catch (e: Exception) {
         "Exception: ${e.message}"
+    }
+}
+
+
+@Composable
+fun StyleTransferScreen(
+    onClose: () -> Unit,
+    onImageReady: () -> Unit
+) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    // ─── State ────────────────────────────────────────────────────────────────
+    var contentUri by rememberSaveable { mutableStateOf<Uri?>(null) }
+    var styleUri by rememberSaveable { mutableStateOf<Uri?>(null) }
+    var outputUri by rememberSaveable { mutableStateOf<Uri?>(null) }
+    var loading by rememberSaveable { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var expandedImage by remember { mutableStateOf<Uri?>(null) }
+
+    val pickContent = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { contentUri = it }
+
+    val pickStyle = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { styleUri = it }
+
+    // animated type‑writer title with gradient style
+    val fullTitle = "Art‑Style Transfer"
+    var title by remember { mutableStateOf("") }
+    LaunchedEffect(Unit) {
+        fullTitle.forEachIndexed { i, _ ->
+            title = fullTitle.substring(0, i + 1)
+            delay(35)
+        }
+    }
+
+    val gradientStyle = MaterialTheme.typography.headlineMedium.copy(
+        brush = Brush.horizontalGradient(
+            listOf(
+                MaterialTheme.colorScheme.primary,
+                MaterialTheme.colorScheme.tertiary
+            )
+        ),
+        fontWeight = FontWeight.ExtraBold,
+        letterSpacing = 1.5.sp
+    )
+
+    val bg = Brush.linearGradient(
+        0f to MaterialTheme.colorScheme.primary.copy(.25f),
+        .5f to MaterialTheme.colorScheme.secondaryContainer.copy(.12f),
+        1f to MaterialTheme.colorScheme.background
+    )
+
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .fillMaxHeight(.85f)
+    ) {
+
+        /* 🎨 bottom‑anchored, side‑to‑side waves */
+        BottomWaveGradient(
+            modifier = Modifier.matchParentSize(),
+            bandHeight = 100.dp,              // ← your requested params
+            fadeHeight = 100.dp,
+            waveAmp = 24.dp,
+            waveLen = 600.dp
+        )
+
+        Scaffold(
+            modifier = Modifier
+                .fillMaxWidth()
+                .nestedScroll(scrollBehavior.nestedScrollConnection),
+            containerColor = Color.Transparent,
+            topBar = {
+                LargeTopAppBar(
+                    title = { Text(title, style = gradientStyle) },
+                    navigationIcon = {
+                        IconButton(onClick = onClose) {
+                            Icon(
+                                Icons.Default.Close,
+                                null
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.largeTopAppBarColors(
+                        containerColor = Color.Transparent
+                    ),
+                    scrollBehavior = scrollBehavior
+                )
+            },
+            floatingActionButton = {
+                AnimatedVisibility(
+                    visible = contentUri != null && styleUri != null && !loading,
+                    enter = scaleIn() + fadeIn(),
+                    exit = scaleOut() + fadeOut()
+                ) {
+                    ExtendedFloatingActionButton(
+                        icon = { Icon(Icons.Default.PlayArrow, null) },
+                        text = { Text("Stylise") },
+                        onClick = {
+                            scope.launch {
+                                loading = true; error = null; outputUri = null
+                                fetchStylisedImage(ctx, contentUri!!, styleUri!!)
+                                    .onSuccess { bytes ->
+                                        val bmp =
+                                            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                                        ImageHolder.generatedImage = bmp   // <‑‑ keep ImageHolder
+                                        onImageReady()
+                                    }
+                                    .onFailure { e ->
+                                        error = e.localizedMessage ?: "Unknown error"
+                                    }
+                                loading = false
+                            }
+                        }
+                    )
+                }
+            }
+        ) { inner ->
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .padding(inner)
+                    .padding(horizontal = 20.dp)
+                    .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Spacer(Modifier.height(16.dp))
+                SelectionCard("Content image", contentUri) {
+                    if (contentUri == null) {
+                        // no image yet → open picker
+                        pickContent.launch("image/*")
+                    } else {
+                        // thumbnail already shown → open zoom dialog
+                        expandedImage = contentUri
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+                SelectionCard("Style image", styleUri) {
+                    if (styleUri == null) {
+                        pickStyle.launch("image/*")
+                    } else {
+                        expandedImage = styleUri
+                    }
+                }
+
+                AnimatedVisibility(outputUri != null) {
+                    Column {
+                        Spacer(Modifier.height(24.dp))
+                        SelectionCard("Stylised", outputUri) {
+                            // outputUri is never null inside this block
+                            expandedImage = outputUri
+                        }
+                    }
+                }
+
+                error?.let {
+                    Spacer(Modifier.height(12.dp))
+                    Text(it, color = MaterialTheme.colorScheme.error)
+                }
+                Spacer(Modifier.height(120.dp)) // keep content clear of FAB
+            }
+
+            if (loading) SweepLoader()
+            if (expandedImage != null) {
+                Dialog(onDismissRequest = { expandedImage = null }) {
+                    ZoomableImage(expandedImage!!)
+                }
+            }
+        }
+
+    }
+}
+/* ──────────────────────────────────────────────────────────────────────────── */
+@Composable
+private fun SelectionCard(
+    label: String,
+    uri:   Uri?,
+    onClick: () -> Unit
+) {
+    ElevatedCard(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(220.dp)
+    ) {
+        if (uri == null) {
+            Box(Modifier.fillMaxSize(), Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Default.AddPhotoAlternate, null, Modifier.size(48.dp))
+                    Spacer(Modifier.height(4.dp))
+                    Text(label, style = MaterialTheme.typography.bodyMedium,
+                        textAlign = TextAlign.Center)
+                }
+            }
+        } else {
+            AsyncImage(
+                model = ImageRequest.Builder(LocalContext.current)
+                    .data(uri).crossfade(true).build(),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+    }
+}
+
+@Composable
+fun ZoomableImage(uri: Uri) {
+    // Track zoom + pan
+    var scale  by remember { mutableStateOf(1f) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
+
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color.Black)        // dark backdrop
+            .pointerInput(Unit) {
+                detectTransformGestures { _, pan, zoom, _ ->
+                    scale  = (scale * zoom).coerceIn(1f, 4f)  // limit 1x‑4x
+                    offset += pan
+                }
+            }
+    ) {
+        AsyncImage(
+            model = ImageRequest.Builder(LocalContext.current)
+                .data(uri)
+                .crossfade(true)
+                .build(),
+            contentDescription = null,
+            contentScale = ContentScale.Fit,          // show entire bitmap
+            modifier = Modifier
+                .align(Alignment.Center)
+                .graphicsLayer {
+                    translationX = offset.x
+                    translationY = offset.y
+                    scaleX = scale
+                    scaleY = scale
+                }
+        )
+    }
+}
+
+@Composable
+private fun SweepLoader() {
+    val offset = rememberInfiniteTransition().animateFloat(
+        initialValue = -1f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            tween(1600, easing = LinearEasing), RepeatMode.Restart
+        )
+    )
+    val sweep = Brush.verticalGradient(
+        0f to Color.Transparent,
+        0.35f to Color.White.copy(alpha = .55f),
+        0.65f to Color.White.copy(alpha = .55f),
+        1f to Color.Transparent,
+        startY = 0f, endY = 300f
+    )
+    Box(
+        Modifier
+            .fillMaxSize()
+            .graphicsLayer { translationY = offset.value * size.height }
+            .background(sweep)
+    )
+}
+
+suspend fun fetchStylisedImage(
+    context: Context,
+    contentUri: Uri,
+    styleUri:   Uri
+): Result<ByteArray> = withContext(Dispatchers.IO) {
+    try {
+        val cr   = context.contentResolver
+        val cSrc = cr.openInputStream(contentUri) ?: return@withContext Result.failure(Exception("Bad content URI"))
+        val sSrc = cr.openInputStream(styleUri  ) ?: return@withContext Result.failure(Exception("Bad style URI"))
+
+        // ---------- multipart body --------------------------------------------------
+        val body = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart(
+                "content",
+                "content.jpg",
+                object : RequestBody() {
+                    override fun contentType(): MediaType = "image/jpeg".toMediaType()
+
+                    override fun writeTo(sink: BufferedSink) {
+                        // copy the InputStream into the sink, ignore the returned byte‑count
+                        cSrc.source().use { source -> sink.writeAll(source) }
+                    }
+                }
+            )
+            .addFormDataPart(
+                "style",
+                "style.jpg",
+                object : RequestBody() {
+                    override fun contentType(): MediaType = "image/jpeg".toMediaType()
+                    override fun writeTo(sink: BufferedSink) {
+                        sSrc.source().use { source -> sink.writeAll(source) }
+                    }
+                }
+            )
+            .build()
+
+        val req = Request.Builder()
+            .url("https://vlad-manolache18--stytr-stytr-inference-serve.modal.run")
+            .post(body)
+            .header("Origin", "https://vlad-manolache18--stytr-stytr-inference-serve.modal.run")
+            .build()
+
+        val client = OkHttpClient.Builder()
+            .connectTimeout(60, TimeUnit.SECONDS)   // TCP + TLS handshake
+            .writeTimeout(60, TimeUnit.SECONDS)     // sending the images
+            .readTimeout(3,  TimeUnit.MINUTES)      // waiting while Modal renders
+            .callTimeout(5, TimeUnit.MINUTES)       // whole operation upper‑bound
+            .build()
+
+        client.newCall(req).execute().use { res ->
+            if (res.isSuccessful) {
+                val bytes = res.body?.bytes() ?: return@withContext Result.failure(Exception("Empty body"))
+                Result.success(bytes)
+            } else {
+                Result.failure(Exception("HTTP ${res.code}: ${res.message}"))
+            }
+        }
+    } catch (e: Exception) {
+        Result.failure(e)
     }
 }

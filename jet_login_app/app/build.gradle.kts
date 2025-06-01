@@ -91,5 +91,9 @@ dependencies {
     implementation("com.google.firebase:firebase-firestore")
 
     implementation ("com.airbnb.android:lottie-compose:6.0.0")
+    //implementation("androidx.compose.material3:material3:1.2.0-alpha10")
+    //implementation(platform("androidx.compose:compose-bom:2025.05.00"))
+    //implementation("androidx.compose.material:material-icons-extended")
+
 
 }
