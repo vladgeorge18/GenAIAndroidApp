@@ -38,7 +38,7 @@ def sketch2image(request):
         }
         data = {
             "prompt": prompt,
-            "control_strength": 0.9,
+            "control_strength": 0.7,
             "output_format": "png"  # Or "webp", if you prefer.
         }
 

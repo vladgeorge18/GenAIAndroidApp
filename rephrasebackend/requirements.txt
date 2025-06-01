@@ -1,4 +1,5 @@
-flask
+Flask
+google-genai
 requests
-transformers
-
+functions-framework
+vertexai
